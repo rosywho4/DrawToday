@@ -14,6 +14,7 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [toast, setToast] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleSelect = (id: string) => {
@@ -63,31 +64,56 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 将文件转换为 Base64 字符串的辅助函数
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const newRefs: ImageReference[] = (Array.from(files) as File[]).map((file, index) => ({
-      id: `imported-${Date.now()}-${index}`,
-      url: URL.createObjectURL(file),
-      completed: false,
-      title: file.name
-    }));
+    setIsImporting(true);
+    showToast("正在处理图片...");
 
-    const nextRefs = [...newRefs, ...folder.references];
-    onUpdateFolder({
-      ...folder,
-      references: nextRefs,
-      coverImage: newRefs[0].url
-    });
+    try {
+      const newRefs: ImageReference[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const base64Data = await readFileAsBase64(files[i]);
+        newRefs.push({
+          id: `imported-${Date.now()}-${i}`,
+          url: base64Data, // 存入 Base64 字符串实现永久化
+          completed: false,
+          title: files[i].name
+        });
+      }
 
-    showToast(`已导入 ${newRefs.length} 张素材`);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+      const nextRefs = [...newRefs, ...folder.references];
+      onUpdateFolder({
+        ...folder,
+        references: nextRefs,
+        coverImage: newRefs[0].url,
+        lastUpdated: '刚刚'
+      });
+
+      showToast(`成功导入 ${newRefs.length} 张素材`);
+    } catch (err) {
+      console.error("图片转换失败:", err);
+      showToast("图片处理失败，请重试");
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2000);
+    setTimeout(() => setToast(null), 2500);
   };
 
   const realCount = folder.references.length;
@@ -105,6 +131,9 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
 
       {toast && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[60] bg-black/80 text-white px-6 py-3 rounded-full text-xs font-bold animate-bounce shadow-xl">
+          {isImporting && (
+            <span className="inline-block animate-spin mr-2">⏳</span>
+          )}
           {toast}
         </div>
       )}
@@ -223,17 +252,30 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
         )}
       </main>
 
-      {realCount > 0 && (
-        <div className="fixed bottom-28 right-6 z-40">
+      {/* 悬浮操作按钮区 */}
+      <div className="fixed bottom-28 right-6 z-40 flex items-center gap-3">
+        {/* 新增：导入按钮 */}
+        <button 
+          onClick={handleImportClick}
+          className="flex items-center justify-center size-12 rounded-full bg-white text-primary border border-primary/10 shadow-lg active:scale-95 transition-all hover:bg-primary/5"
+          title="导入更多素材"
+        >
+          <span className="material-symbols-outlined text-2xl">add_photo_alternate</span>
+        </button>
+
+        {/* 练习按钮：仅在有素材时显示 */}
+        {realCount > 0 && (
           <button 
             onClick={() => onNavigate(Page.PRACTICE_CONFIG, folder)}
             className="flex items-center justify-center size-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 active:scale-95 transition-transform"
+            title="开始练习"
           >
             <span className="material-symbols-outlined text-3xl filled">play_arrow</span>
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
+      {/* 选择操作条 */}
       <div className={`fixed bottom-0 left-0 right-0 z-50 px-4 pb-10 pt-4 bg-white border-t border-black/5 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] transition-transform duration-300 ${selectedIds.size > 0 ? 'translate-y-0' : 'translate-y-full'}`}>
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <button 
