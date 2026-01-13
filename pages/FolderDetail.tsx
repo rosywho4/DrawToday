@@ -41,6 +41,17 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     setSelectedIds(next);
     
     if (next.size === 0) setIsSelectionMode(false);
+    else setIsSelectionMode(true);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === folder.references.length) {
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+    } else {
+      setSelectedIds(new Set(folder.references.map(r => r.id)));
+      setIsSelectionMode(true);
+    }
   };
 
   const handleLongPress = (id: string) => {
@@ -82,7 +93,6 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
 
   const handleToggleComplete = () => {
     if (selectedIds.size === 0) return;
-    // 逻辑：如果选中的图里有未完成的，则全部标记为完成；否则全部标记为未完成
     const selectedRefs = folder.references.filter(r => selectedIds.has(r.id));
     const hasIncomplete = selectedRefs.some(r => !r.completed);
     
@@ -222,18 +232,30 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
             </div>
           </div>
           
-          {!isSelectionMode && (
-            <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1">
+            {!isSelectionMode && (
               <button 
                 onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
                 className="flex items-center justify-center size-10 rounded-full hover:bg-white/50 text-slate-400 transition-colors"
+                title="切换视图"
               >
                 <span className="material-symbols-outlined text-2xl">
                   {viewMode === 'grid' ? 'format_list_bulleted' : 'grid_view'}
                 </span>
               </button>
-            </div>
-          )}
+            )}
+            {realCount > 0 && (
+              <button 
+                onClick={handleSelectAll}
+                className={`flex items-center justify-center size-10 rounded-full transition-all active:scale-90 ${selectedIds.size === realCount ? 'text-primary bg-primary/10' : 'text-slate-400 hover:bg-white/50'}`}
+                title={selectedIds.size === realCount ? "取消全选" : "全选"}
+              >
+                <span className={`material-symbols-outlined text-2xl ${selectedIds.size === realCount ? 'filled' : ''}`}>
+                  select_all
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
