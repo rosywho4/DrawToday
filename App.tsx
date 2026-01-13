@@ -8,12 +8,15 @@ import PracticeSession from './pages/PracticeSession';
 import Statistics from './pages/Statistics';
 import Settings from './pages/Settings';
 import BottomNav from './components/BottomNav';
+import OnboardingGuide from './components/OnboardingGuide';
 import { MOCK_FOLDERS } from './constants';
 
 const STORAGE_KEY = 'sketch_serenity_folders_v2';
+const ONBOARDING_KEY = 'sketch_serenity_onboarding_completed';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>(Page.HOME);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [folders, setFolders] = useState<Folder[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved) : MOCK_FOLDERS;
@@ -21,7 +24,19 @@ const App: React.FC = () => {
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<SessionParams | null>(null);
 
-  // Persistence logic - Sync state to storage whenever folders change
+  useEffect(() => {
+    // 检查是否需要显示引导
+    const completed = localStorage.getItem(ONBOARDING_KEY);
+    if (!completed) {
+      setShowOnboarding(true);
+    }
+  }, []);
+
+  const handleCompleteOnboarding = () => {
+    localStorage.setItem(ONBOARDING_KEY, 'true');
+    setShowOnboarding(false);
+  };
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(folders));
   }, [folders]);
@@ -143,6 +158,8 @@ const App: React.FC = () => {
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-bg-serenity relative">
+      {showOnboarding && <OnboardingGuide onComplete={handleCompleteOnboarding} />}
+      
       {renderPage()}
       {showBottomNav && (
         <BottomNav currentPage={currentPage} onNavigate={handleNavigate} />
