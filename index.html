@@ -6,6 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SketchSerenity" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#EAF2F6" />
     <title>Sketch Serenity Assistant</title>
     
     <!-- 1. 优先加载字体和图标 -->
@@ -14,7 +17,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
     
-    <!-- 2. 基础图标样式（防止图标显示为英文单词） -->
+    <!-- 2. 基础图标样式 -->
     <style>
         .material-symbols-outlined {
             font-family: 'Material Symbols Outlined';
@@ -64,8 +67,11 @@
     <style type="text/tailwindcss">
         @layer base {
             body {
-                @apply bg-bg-serenity text-text-main font-sans;
+                @apply bg-bg-serenity text-text-main font-sans overflow-x-hidden;
                 -webkit-tap-highlight-color: transparent;
+            }
+            :fullscreen {
+                background-color: #000;
             }
         }
         .ios-blur {
@@ -92,7 +98,6 @@
 </head>
 <body>
     <div id="root"></div>
-    <!-- Vite 会处理 index.tsx 的编译和依赖注入，不需要 importmap -->
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>

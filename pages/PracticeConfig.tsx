@@ -9,180 +9,259 @@ interface PracticeConfigProps {
 }
 
 const DEFAULT_PRESETS: PracticePreset[] = [
-  { id: 'p1', name: '30s 极速练习', imageCount: 20, timePerImage: 30 },
-  { id: 'p2', name: '2min 结构研究', imageCount: 10, timePerImage: 120 },
-  { id: 'p3', name: '5min 细致写生', imageCount: 5, timePerImage: 300 },
+  { id: 'p1', name: '30s 极速', imageCount: 15, timePerImage: 30 },
+  { id: 'p2', name: '2m 结构', imageCount: 8, timePerImage: 120 },
+  { id: 'p3', name: '5m 细致', imageCount: 3, timePerImage: 300 },
 ];
 
 const PracticeConfig: React.FC<PracticeConfigProps> = ({ folder, onStart, onBack }) => {
-  const availableImages = useMemo(() => {
-    return folder.references.filter(r => !r.completed);
-  }, [folder.references]);
-
+  const availableImages = useMemo(() => folder.references.filter(r => !r.completed), [folder.references]);
   const maxCount = availableImages.length;
-  const [imageCount, setImageCount] = useState(Math.min(15, maxCount));
-  const [minutes, setMinutes] = useState(2);
+  
+  const [imageCount, setImageCount] = useState(Math.min(10, maxCount || 1));
+  const [minutes, setMinutes] = useState(1);
   const [seconds, setSeconds] = useState(30);
   const [mode, setMode] = useState<'random' | 'sequential'>('random');
-
-  const [presets, setPresets] = useState<PracticePreset[]>(DEFAULT_PRESETS);
-  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [isNamingPreset, setIsNamingPreset] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
-
-  const totalTimeSeconds = (minutes * 60) + seconds;
+  
+  const [presets, setPresets] = useState<PracticePreset[]>(() => {
+    const saved = localStorage.getItem('sketch_serenity_presets');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const customs = parsed.filter((p: PracticePreset) => !DEFAULT_PRESETS.some(dp => dp.id === p.id));
+        return [...DEFAULT_PRESETS, ...customs];
+      } catch (e) {
+        return DEFAULT_PRESETS;
+      }
+    }
+    return DEFAULT_PRESETS;
+  });
 
   useEffect(() => {
-    if (imageCount > maxCount) setImageCount(maxCount);
-    if (imageCount === 0 && maxCount > 0) setImageCount(Math.min(1, maxCount));
-  }, [maxCount]);
+    localStorage.setItem('sketch_serenity_presets', JSON.stringify(presets));
+  }, [presets]);
 
-  const handleImageCountChange = (val: number) => {
-    setImageCount(Math.max(0, Math.min(maxCount, val)));
-  };
+  const totalSec = (minutes * 60) + seconds;
 
-  const applyPreset = (preset: PracticePreset) => {
-    setImageCount(Math.min(preset.imageCount, maxCount));
-    setMinutes(Math.floor(preset.timePerImage / 60));
-    setSeconds(preset.timePerImage % 60);
-  };
+  const activePresetId = useMemo(() => {
+    const found = presets.find(p => p.imageCount === imageCount && p.timePerImage === totalSec);
+    return found ? found.id : null;
+  }, [imageCount, totalSec, presets]);
 
-  const saveCurrentAsPreset = () => {
-    if (!newPresetName.trim()) return;
-    const newPreset: PracticePreset = {
-      id: `custom-${Date.now()}`,
-      name: newPresetName,
-      imageCount,
-      timePerImage: totalTimeSeconds,
-    };
-    setPresets([...presets, newPreset]);
-    setNewPresetName('');
-    setShowSaveModal(false);
-  };
-
-  const formatEstimation = (totalSec: number) => {
-    const total = totalSec * imageCount;
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const s = total % 60;
-    
-    if (h > 0) return `${h}小时 ${m}分`;
-    if (m > 0) return `${m}分 ${s}秒`;
-    return `${s}秒`;
+  const deletePreset = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (DEFAULT_PRESETS.some(p => p.id === id)) return;
+    setPresets(prev => prev.filter(p => p.id !== id));
   };
 
   const handleStart = () => {
     if (maxCount === 0) return;
-    const finalTime = Math.max(5, totalTimeSeconds);
-    onStart({
-      folderId: folder.id,
-      imageCount,
-      timePerImage: finalTime,
-      mode
-    });
+    onStart({ folderId: folder.id, imageCount, timePerImage: Math.max(5, totalSec), mode });
+  };
+
+  const openSaveDialog = () => {
+    setNewPresetName(`预设 ${presets.length + 1}`);
+    setIsNamingPreset(true);
+  };
+
+  const confirmSavePreset = () => {
+    if (newPresetName.trim()) {
+      const newPreset: PracticePreset = {
+        id: `custom-${Date.now()}`,
+        name: newPresetName.trim(),
+        imageCount: imageCount,
+        timePerImage: totalSec
+      };
+      setPresets(prev => [...prev, newPreset]);
+      setIsNamingPreset(false);
+    }
+  };
+
+  const selectPreset = (p: PracticePreset) => {
+    setImageCount(Math.min(p.imageCount, maxCount || 1)); 
+    setMinutes(Math.floor(p.timePerImage / 60)); 
+    setSeconds(p.timePerImage % 60);
+  };
+
+  const handleImageCountChange = (val: number) => {
+    const safeVal = Math.min(maxCount, Math.max(1, val));
+    setImageCount(safeVal);
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-bg-serenity p-6 pt-12 relative overflow-hidden">
-      {showSaveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/20 backdrop-blur-sm">
-          <div className="bg-white rounded-[2rem] p-8 w-full shadow-2xl animate-in fade-in zoom-in duration-200">
-            <h3 className="text-xl font-black mb-4">保存为新预设</h3>
-            <input 
-              autoFocus
-              type="text"
-              placeholder="预设名称"
-              value={newPresetName}
-              onChange={(e) => setNewPresetName(e.target.value)}
-              className="w-full bg-slate-50 border-none rounded-2xl p-4 mb-6 focus:ring-2 focus:ring-primary/20 font-medium"
-            />
-            <div className="flex gap-3">
-              <button onClick={() => setShowSaveModal(false)} className="flex-1 py-4 font-bold text-slate-400 bg-slate-100 rounded-2xl">取消</button>
-              <button onClick={saveCurrentAsPreset} disabled={!newPresetName.trim()} className="flex-1 py-4 font-bold text-white bg-primary rounded-2xl shadow-lg disabled:opacity-50">确定保存</button>
+    <div className="flex flex-col h-screen bg-bg-serenity p-4 overflow-hidden">
+      {/* 命名预设模态框 */}
+      {isNamingPreset && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-md p-6">
+          <div className="w-full max-w-xs bg-white rounded-[2rem] p-6 shadow-2xl animate-in zoom-in duration-200">
+            <h3 className="text-lg font-black mb-4">保存预设</h3>
+            <div className="space-y-3 mb-6">
+              <div className="bg-slate-50 p-3 rounded-xl">
+                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-0.5">参数预览</p>
+                <p className="text-[11px] font-black text-slate-500">{imageCount}P • {minutes}m{seconds}s/P</p>
+              </div>
+              <input 
+                autoFocus
+                type="text" 
+                value={newPresetName}
+                onChange={e => setNewPresetName(e.target.value)}
+                placeholder="名称..."
+                className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold outline-none text-sm focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setIsNamingPreset(false)} className="flex-1 py-3 text-sm font-bold text-slate-400 bg-slate-100 rounded-xl">取消</button>
+              <button onClick={confirmSavePreset} className="flex-1 py-3 text-sm font-bold text-white bg-primary rounded-xl shadow-lg">保存</button>
             </div>
           </div>
         </div>
       )}
 
-      <header className="mb-8">
-        <button onClick={onBack} className="mb-6 size-10 flex items-center justify-center rounded-full bg-white shadow-sm active:scale-90 transition-transform">
-          <span className="material-symbols-outlined text-2xl">arrow_back_ios_new</span>
+      <header className="flex items-center gap-3 mb-3">
+        <button onClick={onBack} className="size-9 rounded-full bg-white shadow-sm flex items-center justify-center active:scale-90 transition-transform">
+          <span className="material-symbols-outlined text-lg">arrow_back_ios_new</span>
         </button>
-        <h1 className="text-4xl font-black tracking-tighter flex items-center gap-3">练习设置</h1>
-        <p className="text-slate-400 text-sm mt-2 font-medium">跳过已完成，共 {maxCount} 张可练</p>
+        <div>
+          <h1 className="text-lg font-black leading-none">练习设置</h1>
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{maxCount} 张待练习</p>
+        </div>
       </header>
 
-      {maxCount === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-          <div className="size-20 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm">
-            <span className="material-symbols-outlined text-4xl text-secondary filled">check_circle</span>
+      <main className="flex-1 flex flex-col gap-3 overflow-y-auto custom-scrollbar">
+        {/* 预设区域 */}
+        <section>
+          <div className="flex justify-between items-center mb-1.5 px-1">
+            <h3 className="text-[9px] font-black uppercase text-slate-400 tracking-widest">练习预设</h3>
+            <button onClick={openSaveDialog} className="flex items-center gap-1 text-primary text-[9px] font-black uppercase tracking-widest">
+              <span className="material-symbols-outlined text-[13px]">save</span> 存为新预设
+            </button>
           </div>
-          <h2 className="text-xl font-bold mb-2">太棒了！</h2>
-          <p className="text-slate-400 text-sm">该文件夹下的所有素材都已练完。</p>
-        </div>
-      ) : (
-        <div className="space-y-6 flex-1 custom-scrollbar overflow-y-auto pb-10">
-          <section>
-            <div className="flex items-center justify-between mb-4 px-2">
-              <h3 className="text-xs font-bold tracking-widest text-slate-400 uppercase">快速预设</h3>
-              <button onClick={() => setShowSaveModal(true)} className="text-primary text-[10px] font-bold bg-primary/10 px-3 py-1 rounded-full">+ 保存当前</button>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar">
-              {presets.map(preset => (
-                <button key={preset.id} onClick={() => applyPreset(preset)} className="flex-shrink-0 bg-white border border-white p-4 rounded-2xl shadow-sm hover:shadow-md transition-all active:scale-95 text-left w-32">
-                  <p className="font-bold text-[11px] mb-1 truncate">{preset.name}</p>
-                  <p className="text-[10px] text-slate-400 font-bold">{preset.imageCount}张 • {preset.timePerImage}s</p>
-                </button>
-              ))}
-            </div>
-          </section>
+          <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+            {presets.map(p => {
+              const isDefault = DEFAULT_PRESETS.some(dp => dp.id === p.id);
+              const isActive = activePresetId === p.id;
+              return (
+                <div 
+                  key={p.id} 
+                  onClick={() => selectPreset(p)}
+                  className={`flex-shrink-0 relative w-24 p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between h-16 ${
+                    isActive 
+                      ? 'bg-primary border-primary shadow-md shadow-primary/20' 
+                      : 'bg-white border-black/5 shadow-sm'
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <p className={`font-black text-[9px] truncate leading-tight pr-1 ${isActive ? 'text-white' : 'text-text-main'}`}>{p.name}</p>
+                    {!isDefault && (
+                      <button 
+                        onClick={(e) => deletePreset(e, p.id)} 
+                        className={`size-3.5 flex items-center justify-center rounded-full ${isActive ? 'text-white/40 hover:text-white' : 'text-slate-200 hover:text-rose-500'}`}
+                      >
+                        <span className="material-symbols-outlined text-[12px]">close</span>
+                      </button>
+                    )}
+                  </div>
+                  <p className={`text-[8px] font-bold ${isActive ? 'text-white/80' : 'text-slate-400'}`}>
+                    {p.imageCount}P • {Math.floor(p.timePerImage / 60)}m{p.timePerImage % 60}s
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
-          <section className="bg-white p-6 rounded-[2rem] border border-black/5 shadow-sm">
-            <h3 className="text-sm font-bold mb-4 uppercase tracking-wider text-slate-400">练习模式</h3>
-            <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl">
-              <button onClick={() => setMode('random')} className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${mode === 'random' ? 'bg-white shadow-sm text-primary' : 'text-slate-400'}`}>随机播放</button>
-              <button onClick={() => setMode('sequential')} className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${mode === 'sequential' ? 'bg-white shadow-sm text-primary' : 'text-slate-400'}`}>顺序播放</button>
+        {/* 核心配置 */}
+        <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-black/5 space-y-3.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">模式</span>
+            <div className="flex bg-slate-50 p-1 rounded-lg">
+              <button onClick={() => setMode('random')} className={`px-4 py-1.5 rounded-md text-[9px] font-black transition-all ${mode === 'random' ? 'bg-white shadow-sm text-primary' : 'text-slate-300'}`}>随机</button>
+              <button onClick={() => setMode('sequential')} className={`px-4 py-1.5 rounded-md text-[9px] font-black transition-all ${mode === 'sequential' ? 'bg-white shadow-sm text-primary' : 'text-slate-300'}`}>顺序</button>
             </div>
-          </section>
+          </div>
 
-          <section className="bg-white p-6 rounded-[2rem] border border-black/5 shadow-sm">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">练习数量</h3>
-              <span className="text-xl font-black text-primary">{imageCount} <span className="text-[10px] uppercase">张</span></span>
-            </div>
-            <input type="range" min="1" max={maxCount} value={imageCount} onChange={(e) => handleImageCountChange(parseInt(e.target.value))} className="w-full h-2 bg-slate-100 rounded-full appearance-none cursor-pointer accent-primary mb-6" />
-            <div className="grid grid-cols-4 gap-2">
-              {[5, 10, 20, maxCount].filter(v => v <= maxCount).map(val => (
-                <button key={val} onClick={() => handleImageCountChange(val)} className={`py-2 rounded-lg text-xs font-bold border ${imageCount === val ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>{val === maxCount ? '全部' : val}</button>
-              ))}
-            </div>
-          </section>
-
-          <section className="bg-white p-6 rounded-[2rem] border border-black/5 shadow-sm">
-            <h3 className="text-sm font-bold mb-6 uppercase tracking-wider text-slate-400">单张限时</h3>
-            <div className="flex items-center justify-center gap-4">
-              <div className="flex flex-col items-center">
-                <input type="number" value={minutes} onChange={(e) => setMinutes(Math.max(0, parseInt(e.target.value) || 0))} className="w-20 bg-slate-50 border-none rounded-xl text-center text-3xl font-black text-secondary focus:ring-0" />
-                <span className="text-[10px] font-bold text-slate-300 mt-2">分</span>
-              </div>
-              <span className="text-2xl font-black text-slate-200">:</span>
-              <div className="flex flex-col items-center">
-                <input type="number" value={seconds} onChange={(e) => setSeconds(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} className="w-20 bg-slate-50 border-none rounded-xl text-center text-3xl font-black text-secondary focus:ring-0" />
-                <span className="text-[10px] font-bold text-slate-300 mt-2">秒</span>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      <div className="mt-4 pb-10">
-        <div className="bg-white/90 p-5 rounded-[2rem] border border-white shadow-xl mb-4 flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">总计时间预估</p>
-            <p className="text-2xl font-black text-text-main mt-1">{formatEstimation(totalTimeSeconds)}</p>
+            <div className="flex justify-between items-center mb-1.5 px-1">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">数量</span>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => handleImageCountChange(maxCount)}
+                  className="text-[9px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md active:bg-primary/20 transition-colors"
+                >
+                  全部
+                </button>
+                <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg">
+                  <input 
+                    type="number" 
+                    value={imageCount} 
+                    onChange={e => handleImageCountChange(parseInt(e.target.value) || 0)}
+                    className="w-10 bg-transparent border-none text-center text-sm font-black text-primary p-0 outline-none"
+                  />
+                  <span className="text-[9px] font-black text-slate-300">P</span>
+                </div>
+              </div>
+            </div>
+            <input 
+              type="range" 
+              min="1" 
+              max={Math.max(1, maxCount)} 
+              value={imageCount} 
+              onChange={e => setImageCount(parseInt(e.target.value))} 
+              className="w-full h-1.5 bg-slate-100 rounded-full appearance-none accent-primary cursor-pointer" 
+            />
           </div>
-          <span className="material-symbols-outlined text-primary text-3xl">schedule</span>
+
+          <div>
+            <div className="flex justify-between items-center mb-1.5 px-1">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">单张计时</span>
+              <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">MIN : SEC</span>
+            </div>
+            <div className="flex items-center justify-center gap-4">
+              <div className="flex flex-col items-center gap-1">
+                <input 
+                  type="number" 
+                  value={minutes} 
+                  onChange={e => setMinutes(Math.max(0, parseInt(e.target.value)||0))} 
+                  className="w-16 bg-slate-50 border-none rounded-xl text-center text-xl font-black text-primary py-1.5 outline-none focus:ring-1 focus:ring-primary/20" 
+                />
+              </div>
+              <span className="text-slate-200 font-black text-xl">:</span>
+              <div className="flex flex-col items-center gap-1">
+                <input 
+                  type="number" 
+                  value={seconds} 
+                  onChange={e => setSeconds(Math.max(0, Math.min(59, parseInt(e.target.value)||0)))} 
+                  className="w-16 bg-slate-50 border-none rounded-xl text-center text-xl font-black text-primary py-1.5 outline-none focus:ring-1 focus:ring-primary/20" 
+                />
+              </div>
+            </div>
+          </div>
         </div>
-        <button onClick={handleStart} disabled={maxCount === 0} className={`w-full py-5 rounded-3xl font-black text-xl flex items-center justify-center gap-3 shadow-lg active:scale-95 transition-all ${maxCount === 0 ? 'bg-slate-200 text-slate-400' : 'bg-primary text-white shadow-primary/30'}`}>开始挑战</button>
+      </main>
+
+      {/* 底部动作区域 */}
+      <div className="pt-3 pb-1 space-y-2">
+        <div className="bg-white/60 backdrop-blur-sm px-4 py-2.5 rounded-xl border border-black/5 flex items-center justify-between shadow-sm">
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">预计总时长</span>
+          <span className="text-sm font-black text-text-main tabular-nums">
+            {Math.floor((totalSec * imageCount) / 60)}<span className="text-[10px] text-slate-300 font-bold ml-0.5 uppercase">M</span>
+            <span className="mx-1.5"></span>
+            {(totalSec * imageCount) % 60}<span className="text-[10px] text-slate-300 font-bold ml-0.5 uppercase">S</span>
+          </span>
+        </div>
+        <button 
+          onClick={handleStart} 
+          disabled={maxCount === 0} 
+          className={`w-full py-3.5 rounded-2xl font-black text-base shadow-lg active:scale-[0.98] transition-all ${
+            maxCount === 0 
+              ? 'bg-slate-200 text-slate-400' 
+              : 'bg-primary text-white shadow-primary/30'
+          }`}
+        >
+          {maxCount === 0 ? '资源库已空' : '开启挑战'}
+        </button>
       </div>
     </div>
   );

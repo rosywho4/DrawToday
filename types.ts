@@ -4,6 +4,7 @@ export interface ImageReference {
   url: string;
   completed: boolean;
   title?: string;
+  isLocalFile?: boolean; // 标记是否为本地文件系统资源
 }
 
 export interface Folder {
@@ -12,6 +13,7 @@ export interface Folder {
   lastUpdated: string;
   coverImage: string;
   references: ImageReference[];
+  linkedPath?: string; // 存储本地文件夹的友好路径名称
 }
 
 export interface PracticePreset {

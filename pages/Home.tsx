@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Folder, Page } from '../types';
 
 interface HomeProps {
@@ -20,13 +20,30 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
   const [isAdding, setIsAdding] = useState(false);
   const [isRenaming, setIsRenaming] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const longPressTimer = useRef<number | null>(null);
   const isLongPressActive = useRef(false);
 
-  // Handle Long Press to show menu
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
   const startLongPress = (folderId: string) => {
     isLongPressActive.current = false;
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = window.setTimeout(() => {
       isLongPressActive.current = true;
       setActiveMenuFolderId(folderId);
@@ -65,98 +82,50 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
     }
   };
 
-  const executeDelete = () => {
-    if (showDeleteConfirm) {
-      onDeleteFolder(showDeleteConfirm);
-      setShowDeleteConfirm(null);
-      setActiveMenuFolderId(null);
-    }
-  };
-
   const pinnedFolder = folders.length > 0 ? folders[0] : null;
 
   return (
     <div className="flex flex-col min-h-screen pb-32">
-      {/* Delete Confirmation Modal (Custom UI instead of window.confirm) */}
+      {/* 确认删除弹窗 */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-6">
           <div className="w-full max-w-xs bg-white rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-200 text-center">
-            <div className="size-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="material-symbols-outlined text-rose-500 text-3xl">delete_forever</span>
-            </div>
-            <h3 className="text-xl font-black mb-2 text-text-main">确认删除？</h3>
+            <h3 className="text-xl font-black mb-2">确认删除？</h3>
             <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-              确定要删除 <span className="text-text-main font-bold">"{folders.find(f => f.id === showDeleteConfirm)?.name}"</span> 吗？此操作无法撤销。
+              确定要删除 <span className="text-text-main font-bold">"{folders.find(f => f.id === showDeleteConfirm)?.name}"</span> 吗？
             </p>
             <div className="flex flex-col gap-3">
-              <button 
-                onClick={executeDelete}
-                className="w-full py-4 font-bold text-white bg-rose-500 rounded-2xl shadow-lg shadow-rose-200 active:scale-95 transition-transform"
-              >
-                彻底删除
-              </button>
-              <button 
-                onClick={() => setShowDeleteConfirm(null)}
-                className="w-full py-4 font-bold text-slate-400 bg-slate-50 rounded-2xl active:scale-95 transition-transform"
-              >
-                留着它
-              </button>
+              <button onClick={() => { onDeleteFolder(showDeleteConfirm); setShowDeleteConfirm(null); setActiveMenuFolderId(null); }} className="w-full py-4 font-bold text-white bg-rose-500 rounded-2xl shadow-lg shadow-rose-200">彻底删除</button>
+              <button onClick={() => setShowDeleteConfirm(null)} className="w-full py-4 font-bold text-slate-400 bg-slate-50 rounded-2xl">取消</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Action Menu Modal */}
+      {/* 操作菜单 */}
       {activeMenuFolderId && !showDeleteConfirm && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setActiveMenuFolderId(null)}>
           <div className="w-full max-w-sm bg-white rounded-[2rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-slate-50">
-              <h3 className="text-center font-black text-slate-400 text-xs uppercase tracking-widest">图库操作</h3>
+            <div className="p-4 border-b border-slate-50 text-center">
+              <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest">图库管理</h3>
             </div>
-            <button 
-              onClick={() => {
-                const f = folders.find(f => f.id === activeMenuFolderId);
-                if (f) {
-                  setInputValue(f.name);
-                  setIsRenaming(activeMenuFolderId);
-                }
-                setActiveMenuFolderId(null);
-              }}
-              className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 transition-colors"
-            >
-              <span className="material-symbols-outlined text-primary">edit</span>
-              <span className="font-bold">重命名图库</span>
+            <button onClick={() => { const f = folders.find(f => f.id === activeMenuFolderId); if (f) { setInputValue(f.name); setIsRenaming(activeMenuFolderId); } setActiveMenuFolderId(null); }} className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold">
+              <span className="material-symbols-outlined text-primary">edit</span> 重命名
             </button>
-            <button 
-              onClick={() => {
-                onCopyFolder(activeMenuFolderId!);
-                setActiveMenuFolderId(null);
-              }}
-              className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 transition-colors"
-            >
-              <span className="material-symbols-outlined text-primary">content_copy</span>
-              <span className="font-bold">复制副本</span>
+            <button onClick={() => { onCopyFolder(activeMenuFolderId!); setActiveMenuFolderId(null); }} className="w-full p-5 flex items-center gap-4 hover:bg-slate-50 border-b border-slate-50 font-bold">
+              <span className="material-symbols-outlined text-primary">content_copy</span> 复制副本
             </button>
-            <button 
-              onClick={() => setShowDeleteConfirm(activeMenuFolderId)}
-              className="w-full p-5 flex items-center gap-4 hover:bg-rose-50 transition-colors text-rose-500"
-            >
-              <span className="material-symbols-outlined">delete</span>
-              <span className="font-bold">彻底删除</span>
+            <button onClick={() => setShowDeleteConfirm(activeMenuFolderId)} className="w-full p-5 flex items-center gap-4 hover:bg-rose-50 text-rose-500 font-bold">
+              <span className="material-symbols-outlined">delete</span> 彻底删除
             </button>
             <div className="p-4 bg-slate-50">
-              <button 
-                onClick={() => setActiveMenuFolderId(null)}
-                className="w-full py-4 bg-white rounded-2xl font-black text-slate-400 shadow-sm"
-              >
-                取消
-              </button>
+              <button onClick={() => setActiveMenuFolderId(null)} className="w-full py-4 bg-white rounded-2xl font-black text-slate-400 shadow-sm">取消</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Add / Rename Input Modal */}
+      {/* 输入框弹窗 */}
       {(isAdding || isRenaming) && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-6">
           <div className="w-full max-w-xs bg-white rounded-[2rem] p-8 shadow-2xl animate-in zoom-in duration-200">
@@ -167,22 +136,11 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               placeholder="请输入名称"
-              className="w-full p-4 bg-slate-50 border-none rounded-2xl mb-6 focus:ring-2 focus:ring-primary/20 font-bold outline-none"
-              onKeyDown={e => e.key === 'Enter' && (isAdding ? confirmAdd() : confirmRename())}
+              className="w-full p-4 bg-slate-50 border-none rounded-2xl mb-6 font-bold outline-none focus:ring-2 focus:ring-primary/20"
             />
             <div className="flex gap-3">
-              <button 
-                onClick={() => { setIsAdding(false); setIsRenaming(null); setInputValue(''); }}
-                className="flex-1 py-4 font-bold text-slate-400 bg-slate-100 rounded-2xl"
-              >
-                取消
-              </button>
-              <button 
-                onClick={isAdding ? confirmAdd : confirmRename}
-                className="flex-1 py-4 font-bold text-white bg-primary rounded-2xl shadow-lg shadow-primary/30"
-              >
-                确定
-              </button>
+              <button onClick={() => { setIsAdding(false); setIsRenaming(null); setInputValue(''); }} className="flex-1 py-4 font-bold text-slate-400 bg-slate-100 rounded-2xl">取消</button>
+              <button onClick={isAdding ? confirmAdd : confirmRename} className="flex-1 py-4 font-bold text-white bg-primary rounded-2xl shadow-lg">确定</button>
             </div>
           </div>
         </div>
@@ -195,134 +153,79 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
           </div>
           <h1 className="text-xl font-bold tracking-tight text-text-main">我的图库</h1>
         </div>
+        <button 
+          onClick={toggleFullScreen}
+          className="size-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 active:scale-90 transition-transform"
+          title="切换全屏"
+        >
+          <span className="material-symbols-outlined">
+            {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
+          </span>
+        </button>
       </header>
 
       <main className="px-6 space-y-8 mt-4">
-        {/* Pinned Practice Card */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs font-bold tracking-widest text-slate-400 uppercase">置顶</h2>
-            <span className="text-xs font-semibold text-primary cursor-pointer">查看历史</span>
-          </div>
-          {pinnedFolder ? (
+        {pinnedFolder && (
+          <section>
+            <h2 className="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-4 px-1">最近打开</h2>
             <div 
               onClick={() => handleFolderClick(pinnedFolder)}
-              onContextMenu={(e) => { e.preventDefault(); startLongPress(pinnedFolder.id); }}
+              onContextMenu={(e) => { e.preventDefault(); setActiveMenuFolderId(pinnedFolder.id); }}
               onTouchStart={() => startLongPress(pinnedFolder.id)}
               onTouchEnd={cancelLongPress}
               onMouseDown={() => startLongPress(pinnedFolder.id)}
               onMouseUp={cancelLongPress}
-              className="relative overflow-hidden rounded-2xl bg-white border border-white shadow-sm active:scale-[0.98] transition-transform cursor-pointer select-none"
+              className="relative overflow-hidden rounded-3xl bg-white border border-black/5 shadow-sm active:scale-[0.98] transition-transform cursor-pointer"
             >
-              <div className="flex flex-col sm:flex-row h-full">
-                <div className="flex-1 p-6 flex flex-col justify-between items-start gap-4">
-                  <div>
-                    <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-primary text-white mb-3">
-                      最近练习
-                    </div>
-                    <h3 className="text-xl font-bold leading-tight truncate w-full">
-                      {pinnedFolder.name}
-                    </h3>
-                    <p className="text-slate-400 text-xs mt-1">更新于: {pinnedFolder.lastUpdated}</p>
-                  </div>
-                  <button className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-bold shadow-md shadow-primary/20">
-                    <span className="material-symbols-outlined text-xl filled">play_arrow</span>
-                    <span>继续练习</span>
+              <div className="flex h-32">
+                <div className="flex-1 p-5 flex flex-col justify-between items-start">
+                  <h3 className="text-lg font-bold leading-tight truncate w-full">{pinnedFolder.name}</h3>
+                  <button className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-xl font-bold text-xs">
+                    <span className="material-symbols-outlined text-sm filled">play_arrow</span>
+                    继续练习
                   </button>
                 </div>
-                <div 
-                  className="h-32 sm:h-auto sm:w-1/3 bg-cover bg-center" 
-                  style={{ backgroundImage: `url(${pinnedFolder.coverImage})` }}
-                />
+                <div className="w-1/3 bg-cover bg-center" style={{ backgroundImage: `url(${pinnedFolder.coverImage})` }} />
               </div>
             </div>
-          ) : (
-            <div 
-              onClick={() => setIsAdding(true)}
-              className="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-white/50 transition-colors"
-            >
-              <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">add_circle</span>
-              <p className="text-slate-400 text-sm font-bold">暂无图库，点击新建</p>
-            </div>
-          )}
-        </section>
+          </section>
+        )}
 
-        {/* Folders List/Grid */}
         <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xs font-bold tracking-widest text-slate-400 uppercase">所有文件夹</h2>
-            {folders.length > 0 && (
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => setViewMode('grid')}
-                  className={`material-symbols-outlined text-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'text-primary' : 'text-slate-300'}`}
-                >
-                  grid_view
-                </button>
-                <button 
-                  onClick={() => setViewMode('list')}
-                  className={`material-symbols-outlined text-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'text-primary' : 'text-slate-300'}`}
-                >
-                  format_list_bulleted
-                </button>
-              </div>
-            )}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[10px] font-bold tracking-widest text-slate-400 uppercase px-1">所有图库</h2>
+            <div className="flex gap-4">
+              <button onClick={() => setViewMode('grid')} className={`material-symbols-outlined text-lg ${viewMode === 'grid' ? 'text-primary' : 'text-slate-300'}`}>grid_view</button>
+              <button onClick={() => setViewMode('list')} className={`material-symbols-outlined text-lg ${viewMode === 'list' ? 'text-primary' : 'text-slate-300'}`}>format_list_bulleted</button>
+            </div>
           </div>
 
-          {folders.length === 0 ? (
-            <div className="py-20 flex flex-col items-center opacity-20">
-               <span className="material-symbols-outlined text-6xl mb-4">inventory_2</span>
-               <p className="font-black tracking-widest uppercase text-xs">列表为空</p>
-            </div>
-          ) : (
-            <div className={viewMode === 'grid' ? "grid grid-cols-2 gap-x-4 gap-y-8" : "space-y-4"}>
-              {folders.map((folder) => (
-                <div 
-                  key={folder.id} 
-                  onClick={() => handleFolderClick(folder)}
-                  onContextMenu={(e) => { e.preventDefault(); startLongPress(folder.id); }}
-                  onTouchStart={() => startLongPress(folder.id)}
-                  onTouchEnd={cancelLongPress}
-                  onMouseDown={() => startLongPress(folder.id)}
-                  onMouseUp={cancelLongPress}
-                  className={`group cursor-pointer select-none transition-all ${viewMode === 'list' ? 'flex items-center gap-4 bg-white p-3 rounded-2xl border border-black/5 shadow-sm active:scale-[0.99]' : 'flex flex-col'}`}
-                >
-                  <div className={`relative overflow-hidden rounded-2xl bg-white shadow-sm transition-transform ${viewMode === 'grid' ? 'aspect-[4/5] group-active:scale-[0.97]' : 'size-20 flex-shrink-0'}`}>
-                    <div 
-                      className="absolute inset-0 bg-cover bg-center" 
-                      style={{ backgroundImage: `url(${folder.coverImage})` }}
-                    />
-                    {viewMode === 'grid' && (
-                      <>
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-                        <div className="absolute bottom-3 left-3 text-white">
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/20 backdrop-blur-sm">
-                            {folder.references.length} 参考
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <div className={viewMode === 'list' ? "flex-1" : "mt-3"}>
-                    <h4 className="font-bold text-sm leading-tight text-text-main truncate">{folder.name}</h4>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      {viewMode === 'list' ? `${folder.references.length} 张素材 • ` : ""}更新于 {folder.lastUpdated}
-                    </p>
-                  </div>
-                  {viewMode === 'list' && (
-                    <span className="material-symbols-outlined text-slate-200 pr-2">chevron_right</span>
-                  )}
+          <div className={viewMode === 'grid' ? "grid grid-cols-2 gap-4" : "space-y-4"}>
+            {folders.map((folder) => (
+              <div 
+                key={folder.id} 
+                onClick={() => handleFolderClick(folder)}
+                onContextMenu={(e) => { e.preventDefault(); setActiveMenuFolderId(folder.id); }}
+                onTouchStart={() => startLongPress(folder.id)}
+                onTouchEnd={cancelLongPress}
+                onMouseDown={() => startLongPress(folder.id)}
+                onMouseUp={cancelLongPress}
+                className={`group cursor-pointer select-none transition-all ${viewMode === 'list' ? 'flex items-center gap-4 bg-white p-3 rounded-2xl border border-black/5 shadow-sm' : 'flex flex-col'}`}
+              >
+                <div className={`relative overflow-hidden rounded-2xl bg-slate-100 shadow-sm ${viewMode === 'grid' ? 'aspect-square mb-2' : 'size-16 flex-shrink-0'}`}>
+                  <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${folder.coverImage})` }} />
                 </div>
-              ))}
-            </div>
-          )}
+                <div className="min-w-0">
+                  <h4 className="font-bold text-sm text-text-main truncate">{folder.name}</h4>
+                  <p className="text-[10px] text-slate-400">{folder.references.length} 参考</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
       </main>
 
-      <button 
-        onClick={() => setIsAdding(true)}
-        className="fixed bottom-24 right-6 w-14 h-14 rounded-full bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/30 active:scale-90 transition-transform z-30"
-      >
+      <button onClick={() => setIsAdding(true)} className="fixed bottom-24 right-6 w-14 h-14 rounded-full bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/30 active:scale-90 transition-transform z-30">
         <span className="material-symbols-outlined text-3xl">add</span>
       </button>
     </div>
