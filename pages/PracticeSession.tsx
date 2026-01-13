@@ -59,6 +59,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
   const [flipped, setFlipped] = useState(false);
   const [showUI, setShowUI] = useState(true);
   const [processedImages, setProcessedImages] = useState<ImageReference[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Zoom and Pan state
   const [scale, setScale] = useState(1);
@@ -80,18 +81,19 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
   // 从IndexedDB加载图片并重新生成URL
   useEffect(() => {
     const loadImages = async () => {
+      setIsLoading(true);
       // 获取未完成的图片列表
       const uncompletedImages = folder.references.filter(r => !r.completed);
       
       // 处理每张图片，从IndexedDB加载并重新生成URL
       const processed = await Promise.all(
         uncompletedImages.map(async (img) => {
-          // 如果是本地文件（强连接模式），URL已经是有效的
+          // 如果是本地文件（强连接模式），直接使用原始URL
           if (img.isLocalFile) {
             return img;
           }
           
-          // 如果URL已经是有效的http/https链接，直接返回
+          // 如果URL已经是有效的http/https链接，直接使用
           if (img.url && (img.url.startsWith('http://') || img.url.startsWith('https://'))) {
             return img;
           }
@@ -121,6 +123,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
       finalImages = finalImages.slice(0, session.imageCount);
       
       setProcessedImages(finalImages);
+      setIsLoading(false);
     };
     
     loadImages();
@@ -141,22 +144,22 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
   const images = processedImages;
 
   useEffect(() => {
-    if (images.length === 0) {
+    if (!isLoading && images.length === 0) {
       onQuit();
       return;
     }
     
-    if (!isPaused && timeLeft > 0) {
+    if (!isLoading && !isPaused && timeLeft > 0) {
       timerRef.current = window.setInterval(() => {
         setTimeLeft(prev => prev - 1);
       }, 1000);
-    } else if (timeLeft === 0) {
+    } else if (!isLoading && timeLeft === 0) {
       handleMarkCurrentComplete();
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isPaused, timeLeft, images]);
+  }, [isLoading, isPaused, timeLeft, images]);
 
   useEffect(() => {
     if (!isPaused && showUI) {
@@ -275,7 +278,22 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
   };
 
   const currentImage = images[currentIndex];
-  if (!currentImage) return null;
+
+  // 显示加载状态
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 w-full h-full bg-black flex flex-col items-center justify-center overflow-hidden touch-none">
+        <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4"></div>
+        <p className="text-white font-black text-lg">加载图片中...</p>
+      </div>
+    );
+  }
+
+  // 图片加载完成但没有图片，退出
+  if (!currentImage) {
+    onQuit();
+    return null;
+  }
 
   return (
     <div 
