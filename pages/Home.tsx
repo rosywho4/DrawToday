@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Folder, Page } from '../types';
 
 interface HomeProps {
@@ -20,26 +20,9 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
   const [isAdding, setIsAdding] = useState(false);
   const [isRenaming, setIsRenaming] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
-  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const longPressTimer = useRef<number | null>(null);
   const isLongPressActive = useRef(false);
-
-  useEffect(() => {
-    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
-  }, []);
-
-  const toggleFullScreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
-      });
-    } else {
-      document.exitFullscreen();
-    }
-  };
 
   const startLongPress = (folderId: string) => {
     isLongPressActive.current = false;
@@ -153,15 +136,6 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
           </div>
           <h1 className="text-xl font-bold tracking-tight text-text-main">我的图库</h1>
         </div>
-        <button 
-          onClick={toggleFullScreen}
-          className="size-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 active:scale-90 transition-transform"
-          title="切换全屏"
-        >
-          <span className="material-symbols-outlined">
-            {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
-          </span>
-        </button>
       </header>
 
       <main className="px-6 space-y-8 mt-4">

@@ -47,6 +47,10 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
   const folderInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<number | null>(null);
 
+  // Viewer zoom state
+  const [vScale, setVScale] = useState(1);
+  const vTouchState = useRef({ dist: 0, scale: 1 });
+
   useEffect(() => {
     const checkHandle = async () => {
       if (folder.linkedPath) {
@@ -70,8 +74,8 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
 
   const handleLinkFolder = async () => {
     if (!('showDirectoryPicker' in window)) {
-      showToast("此浏览器不支持强连接，已切换至普通同步");
-      folderInputRef.current?.click();
+      showToast("此浏览器不支持目录选择，已为您开启多选导入");
+      fileInputRef.current?.click();
       return;
     }
     try {
@@ -122,21 +126,27 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     if (!files || files.length === 0) return;
     setIsSyncing(true);
     const newRefs: ImageReference[] = [];
+    
     for (let i = 0; i < files.length; i++) {
-      const url = await new Promise<string>(r => {
-        const reader = new FileReader();
-        reader.onload = () => r(reader.result as string);
-        reader.readAsDataURL(files[i]);
+      const file = files[i];
+      // Use createObjectURL for performance on mobile instead of base64
+      const url = URL.createObjectURL(file);
+      newRefs.push({ 
+        id: `m-${Date.now()}-${i}-${file.size}`, 
+        url, 
+        completed: false, 
+        title: file.name 
       });
-      newRefs.push({ id: `m-${Date.now()}-${i}`, url, completed: false, title: files[i].name });
     }
+    
     onUpdateFolder({
       ...folder,
       references: [...folder.references, ...newRefs],
       coverImage: folder.references.length === 0 ? newRefs[0].url : folder.coverImage
     });
+    
     setIsSyncing(false);
-    showToast("导入成功");
+    showToast(`成功导入 ${newRefs.length} 张图片`);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (folderInputRef.current) folderInputRef.current.value = '';
   };
@@ -185,45 +195,71 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     }
   };
 
+  // Viewer touch handlers
+  const vTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      vTouchState.current.dist = Math.hypot(
+        e.touches[0].pageX - e.touches[1].pageX,
+        e.touches[0].pageY - e.touches[1].pageY
+      );
+      vTouchState.current.scale = vScale;
+    }
+  };
+  const vTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].pageX - e.touches[1].pageX,
+        e.touches[0].pageY - e.touches[1].pageY
+      );
+      const newScale = Math.min(5, Math.max(1, (dist / vTouchState.current.dist) * vTouchState.current.scale));
+      setVScale(newScale);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen select-none">
       <input type="file" ref={fileInputRef} multiple accept="image/*" className="hidden" onChange={handleManualImport} />
       <input type="file" ref={folderInputRef} {...({webkitdirectory: '', directory: ''} as any)} className="hidden" onChange={handleManualImport} />
 
-      {/* 图片查看器：增强导航箭头和层级 */}
+      {/* 图片查看器 */}
       {viewerIndex !== null && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 touch-none"
+             onTouchStart={vTouchStart} onTouchMove={vTouchMove}>
           <button 
-            onClick={() => setViewerIndex(null)} 
-            className="absolute top-12 right-6 size-12 flex items-center justify-center rounded-full bg-white/10 text-white z-[110] active:scale-90 transition-transform"
+            onClick={() => { setViewerIndex(null); setVScale(1); }} 
+            className="absolute top-14 right-6 size-11 flex items-center justify-center rounded-full bg-white/20 text-white z-[110] active:scale-90 transition-transform"
           >
             <span className="material-symbols-outlined">close</span>
           </button>
           
-          <div className="relative w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            {/* 左翻页按钮 */}
-            <button 
-              disabled={viewerIndex === 0}
-              onClick={() => setViewerIndex(viewerIndex - 1)}
-              className="absolute left-4 size-16 flex items-center justify-center rounded-full bg-black/40 text-white disabled:opacity-10 transition-all active:scale-90 z-[110]"
-            >
-              <span className="material-symbols-outlined text-4xl">chevron_left</span>
-            </button>
+          <div className="relative w-full h-full flex items-center justify-center overflow-hidden" onClick={() => { setViewerIndex(null); setVScale(1); }}>
+            {vScale === 1 && (
+              <>
+                <button 
+                  disabled={viewerIndex === 0}
+                  onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex - 1); }}
+                  className="absolute left-4 size-14 flex items-center justify-center rounded-full bg-black/40 text-white disabled:opacity-10 transition-all active:scale-90 z-[110]"
+                >
+                  <span className="material-symbols-outlined text-3xl">chevron_left</span>
+                </button>
+
+                <button 
+                  disabled={viewerIndex === folder.references.length - 1}
+                  onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex + 1); }}
+                  className="absolute right-4 size-14 flex items-center justify-center rounded-full bg-black/40 text-white disabled:opacity-10 transition-all active:scale-90 z-[110]"
+                >
+                  <span className="material-symbols-outlined text-3xl">chevron_right</span>
+                </button>
+              </>
+            )}
 
             <img 
               src={folder.references[viewerIndex].url} 
-              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-200" 
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl transition-transform duration-100 ease-out" 
+              style={{ transform: `scale(${vScale})` }}
               alt="Preview" 
+              onClick={(e) => e.stopPropagation()}
             />
-
-            {/* 右翻页按钮 */}
-            <button 
-              disabled={viewerIndex === folder.references.length - 1}
-              onClick={() => setViewerIndex(viewerIndex + 1)}
-              className="absolute right-4 size-16 flex items-center justify-center rounded-full bg-black/40 text-white disabled:opacity-10 transition-all active:scale-90 z-[110]"
-            >
-              <span className="material-symbols-outlined text-4xl">chevron_right</span>
-            </button>
           </div>
           <div className="absolute bottom-12 px-6 py-2 bg-black/40 rounded-full text-white/80 text-sm font-black tracking-widest tabular-nums z-[110]">
             {viewerIndex + 1} / {folder.references.length}
@@ -231,15 +267,15 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
         </div>
       )}
 
-      {/* Header：恢复多选切换和全选功能 */}
+      {/* Header */}
       <header className="sticky top-0 z-30 bg-bg-serenity/90 backdrop-blur-md px-6 pt-12 pb-4 border-b border-black/5 flex items-center justify-between">
         <div className="flex items-center gap-4 min-w-0">
           <button onClick={() => isSelectionMode ? (setIsSelectionMode(false), setSelectedIds(new Set())) : onNavigate(Page.HOME)} className="size-10 rounded-full bg-white flex items-center justify-center shadow-sm active:scale-90 transition-transform">
             <span className="material-symbols-outlined">{isSelectionMode ? 'close' : 'arrow_back_ios_new'}</span>
           </button>
           <div className="min-w-0">
-            <h1 className="text-lg font-bold truncate">{isSelectionMode ? `已选 ${selectedIds.size} 项` : folder.name}</h1>
-            {folder.linkedPath && !isSelectionMode && <p className="text-[9px] font-bold text-primary uppercase">本地：{folder.linkedPath}</p>}
+            <h1 className="text-xl font-black truncate">{isSelectionMode ? `已选 ${selectedIds.size} 项` : folder.name}</h1>
+            {folder.linkedPath && !isSelectionMode && <p className="text-[10px] font-black text-primary uppercase tracking-wider">本地：{folder.linkedPath}</p>}
           </div>
         </div>
         
@@ -267,26 +303,26 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
 
       {needsPermission && (
         <div className="bg-primary/10 p-4 flex items-center justify-between border-b border-primary/5">
-          <span className="text-xs font-bold text-primary">连接已断开</span>
+          <span className="text-sm font-black text-primary">连接已断开</span>
           <button onClick={async () => {
             const h = await getHandle(folder.id);
             if (h && await (h as any).requestPermission({mode: 'readwrite'}) === 'granted') { setNeedsPermission(false); syncLocalFolder(h); }
-          }} className="bg-primary text-white text-[10px] px-3 py-1.5 rounded-full font-bold">恢复访问</button>
+          }} className="bg-primary text-white text-[11px] px-4 py-2 rounded-full font-black uppercase tracking-wider">恢复访问</button>
         </div>
       )}
 
-      {toast && <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[60] bg-black/80 text-white px-4 py-2 rounded-full text-[10px] font-bold animate-in fade-in slide-in-from-top-2">{toast}</div>}
+      {toast && <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[120] bg-black/80 text-white px-5 py-2.5 rounded-full text-xs font-black animate-in fade-in slide-in-from-top-2">{toast}</div>}
 
       <main className="flex-1 p-4 pb-40">
         {folder.references.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="size-20 rounded-full bg-white flex items-center justify-center shadow-sm opacity-20 mb-6">
-              <span className="material-symbols-outlined text-4xl">folder_zip</span>
+            <div className="size-24 rounded-full bg-white flex items-center justify-center shadow-sm opacity-20 mb-8">
+              <span className="material-symbols-outlined text-5xl">folder_zip</span>
             </div>
-            <p className="text-slate-300 text-xs font-bold mb-8">此图库尚无素材</p>
-            <div className="flex flex-col gap-3 w-48">
-              <button onClick={handleLinkFolder} className="bg-primary text-white py-3 rounded-2xl font-bold text-xs shadow-xl shadow-primary/20">链接本地目录</button>
-              <button onClick={() => fileInputRef.current?.click()} className="bg-white text-slate-400 py-3 rounded-2xl font-bold text-xs border border-black/5">手动导入单张</button>
+            <p className="text-slate-400 text-sm font-black mb-10">此图库尚无素材</p>
+            <div className="flex flex-col gap-4 w-56">
+              <button onClick={handleLinkFolder} className="bg-primary text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-primary/20">导入图片</button>
+              <button onClick={() => fileInputRef.current?.click()} className="bg-white text-slate-400 py-4 rounded-2xl font-black text-sm border border-black/5">从相册添加</button>
             </div>
           </div>
         ) : (
@@ -300,23 +336,23 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
                 onMouseLeave={clearLongPress}
                 onTouchStart={() => startLongPress(ref.id)}
                 onTouchEnd={clearLongPress}
-                className={`relative overflow-hidden rounded-xl bg-white border border-black/5 transition-all cursor-pointer ${viewMode === 'grid' ? 'aspect-square' : 'flex items-center p-2 gap-3'} ${selectedIds.has(ref.id) ? 'ring-4 ring-primary ring-offset-2 scale-90' : 'active:scale-95'}`}
+                className={`relative overflow-hidden rounded-xl bg-white border border-black/5 transition-all cursor-pointer ${viewMode === 'grid' ? 'aspect-square' : 'flex items-center p-2.5 gap-4'} ${selectedIds.has(ref.id) ? 'ring-4 ring-primary ring-offset-2 scale-90' : 'active:scale-95'}`}
               >
-                <div className={viewMode === 'grid' ? "w-full h-full bg-center bg-cover" : "size-12 rounded-lg bg-center bg-cover flex-shrink-0"} style={{ backgroundImage: `url(${ref.url})` }} />
+                <div className={viewMode === 'grid' ? "w-full h-full bg-center bg-cover" : "size-14 rounded-lg bg-center bg-cover flex-shrink-0"} style={{ backgroundImage: `url(${ref.url})` }} />
                 {viewMode === 'list' && (
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-text-main truncate">{ref.title || `素材 #${idx + 1}`}</p>
-                    <p className={`text-[9px] font-black uppercase mt-1 ${ref.completed ? 'text-secondary' : 'text-slate-300'}`}>{ref.completed ? '已完成' : '待练习'}</p>
+                    <p className="text-sm font-black text-text-main truncate">{ref.title || `素材 #${idx + 1}`}</p>
+                    <p className={`text-[10px] font-black uppercase mt-1 ${ref.completed ? 'text-secondary' : 'text-slate-300'}`}>{ref.completed ? '已完成' : '待练习'}</p>
                   </div>
                 )}
                 {ref.completed && !selectedIds.has(ref.id) && (
                   <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] flex items-center justify-center">
-                    <span className="material-symbols-outlined text-secondary filled">check_circle</span>
+                    <span className="material-symbols-outlined text-secondary text-3xl filled">check_circle</span>
                   </div>
                 )}
                 {selectedIds.has(ref.id) && (
-                  <div className="absolute top-1 right-1 bg-primary text-white rounded-full size-6 flex items-center justify-center shadow-lg animate-in zoom-in duration-200">
-                    <span className="material-symbols-outlined text-[14px] font-black">check</span>
+                  <div className="absolute top-1.5 right-1.5 bg-primary text-white rounded-full size-7 flex items-center justify-center shadow-lg animate-in zoom-in duration-200">
+                    <span className="material-symbols-outlined text-[16px] font-black">check</span>
                   </div>
                 )}
               </div>
@@ -326,9 +362,9 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
       </main>
 
       {!isSelectionMode && (
-        <div className="fixed bottom-28 right-6 flex flex-col items-center gap-4 z-40">
-          <button onClick={() => fileInputRef.current?.click()} className="size-12 rounded-full bg-white text-slate-400 shadow-xl border border-black/5 flex items-center justify-center active:scale-90 transition-transform">
-            <span className="material-symbols-outlined">add_photo_alternate</span>
+        <div className="fixed bottom-28 right-6 flex flex-col items-center gap-5 z-40">
+          <button onClick={() => fileInputRef.current?.click()} className="size-14 rounded-full bg-white text-slate-400 shadow-xl border border-black/5 flex items-center justify-center active:scale-90 transition-transform">
+            <span className="material-symbols-outlined text-2xl">add_photo_alternate</span>
           </button>
           <button onClick={() => onNavigate(Page.PRACTICE_CONFIG, folder)} className="size-16 rounded-full bg-primary text-white shadow-xl shadow-primary/30 flex items-center justify-center active:scale-95 transition-transform">
             <span className="material-symbols-outlined text-4xl filled">play_arrow</span>
@@ -336,7 +372,7 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
         </div>
       )}
 
-      {/* 多选模式下的底部操作条：集成删除和标记功能 */}
+      {/* 多选模式 */}
       {isSelectionMode && (
         <div className="fixed bottom-0 inset-x-0 bg-white p-6 pb-12 rounded-t-[3rem] shadow-[0_-15px_40px_rgba(0,0,0,0.1)] z-50 flex justify-around animate-in slide-in-from-bottom duration-300">
           <button 
@@ -349,18 +385,18 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
             }} 
             className="flex flex-col items-center gap-2"
           >
-            <div className="size-14 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center active:scale-90 transition-transform"><span className="material-symbols-outlined">delete</span></div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">移除</span>
+            <div className="size-15 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center active:scale-90 transition-transform"><span className="material-symbols-outlined text-2xl">delete</span></div>
+            <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">移除</span>
           </button>
           
           <button onClick={handleToggleComplete} className="flex flex-col items-center gap-2">
-            <div className="size-14 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center active:scale-90 transition-transform"><span className="material-symbols-outlined">check_circle</span></div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">状态</span>
+            <div className="size-15 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center active:scale-90 transition-transform"><span className="material-symbols-outlined text-2xl">check_circle</span></div>
+            <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">状态</span>
           </button>
 
           <button onClick={() => { setIsSelectionMode(false); setSelectedIds(new Set()); }} className="flex flex-col items-center gap-2">
-            <div className="size-14 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center active:scale-90 transition-transform"><span className="material-symbols-outlined">close</span></div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">取消</span>
+            <div className="size-15 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center active:scale-90 transition-transform"><span className="material-symbols-outlined text-2xl">close</span></div>
+            <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">取消</span>
           </button>
         </div>
       )}
