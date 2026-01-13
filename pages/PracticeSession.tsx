@@ -1,6 +1,47 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Folder, PracticeSession as SessionParams } from '../types';
+import { Folder, PracticeSession as SessionParams, ImageReference } from '../types';
+
+// IndexedDB 配置，用于从数据库加载图片
+const DB_NAME = 'SketchSerenityDB';
+const IMAGES_STORE_NAME = 'Images';
+const DB_VERSION = 3;
+
+interface StoredImage {
+  id: string;
+  file: File;
+  folderId: string;
+}
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (e: any) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IMAGES_STORE_NAME)) {
+        const imagesStore = db.createObjectStore(IMAGES_STORE_NAME, { keyPath: 'id' });
+        imagesStore.createIndex('folderId', 'folderId', { unique: false });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 按ID获取图片
+async function getImageFromDB(imageId: string): Promise<StoredImage | null> {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const request = db.transaction(IMAGES_STORE_NAME).objectStore(IMAGES_STORE_NAME).get(imageId);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => resolve(null);
+  });
+}
+
+// 生成持久化URL
+function createPersistentURL(file: File): string {
+  return URL.createObjectURL(file);
+}
 
 interface PracticeSessionProps {
   folder: Folder;
@@ -17,6 +58,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
   const [rotation, setRotation] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [showUI, setShowUI] = useState(true);
+  const [processedImages, setProcessedImages] = useState<ImageReference[]>([]);
 
   // Zoom and Pan state
   const [scale, setScale] = useState(1);
@@ -35,13 +77,68 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
     moved: false // 用于区分点击和拖拽
   });
 
-  const images = React.useMemo(() => {
-    let list = folder.references.filter(r => !r.completed);
-    if (session.mode === 'random') {
-      list = [...list].sort(() => Math.random() - 0.5);
-    }
-    return list.slice(0, session.imageCount);
+  // 从IndexedDB加载图片并重新生成URL
+  useEffect(() => {
+    const loadImages = async () => {
+      // 获取未完成的图片列表
+      const uncompletedImages = folder.references.filter(r => !r.completed);
+      
+      // 处理每张图片，从IndexedDB加载并重新生成URL
+      const processed = await Promise.all(
+        uncompletedImages.map(async (img) => {
+          // 如果是本地文件（强连接模式），URL已经是有效的
+          if (img.isLocalFile) {
+            return img;
+          }
+          
+          // 如果URL已经是有效的http/https链接，直接返回
+          if (img.url && (img.url.startsWith('http://') || img.url.startsWith('https://'))) {
+            return img;
+          }
+          
+          // 否则从IndexedDB加载图片
+          const storedImg = await getImageFromDB(img.id);
+          if (storedImg) {
+            // 从IndexedDB加载成功，生成新的URL
+            return {
+              ...img,
+              url: createPersistentURL(storedImg.file)
+            };
+          }
+          
+          // 加载失败，返回原图片
+          return img;
+        })
+      );
+      
+      // 应用随机或顺序模式
+      let finalImages = [...processed];
+      if (session.mode === 'random') {
+        finalImages = finalImages.sort(() => Math.random() - 0.5);
+      }
+      
+      // 限制图片数量
+      finalImages = finalImages.slice(0, session.imageCount);
+      
+      setProcessedImages(finalImages);
+    };
+    
+    loadImages();
   }, [folder, session]);
+
+  // 组件卸载时释放所有Blob URL
+  useEffect(() => {
+    return () => {
+      processedImages.forEach(img => {
+        if (img.url && img.url.startsWith('blob:')) {
+          URL.revokeObjectURL(img.url);
+        }
+      });
+    };
+  }, [processedImages]);
+
+  // 使用处理后的图片列表
+  const images = processedImages;
 
   useEffect(() => {
     if (images.length === 0) {
