@@ -2,17 +2,32 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Folder, Page, ImageReference } from '../types';
 
-// IndexedDB 配置，用于持久化存储 FileSystemDirectoryHandle
+// IndexedDB 配置，用于持久化存储 FileSystemDirectoryHandle 和图片
 const DB_NAME = 'SketchSerenityDB';
 const STORE_NAME = 'FolderHandles';
+const IMAGES_STORE_NAME = 'Images';
+const DB_VERSION = 3; // 升级版本，添加图片存储
+
+interface StoredImage {
+  id: string;
+  file: File;
+  folderId: string;
+}
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 2); // 升级版本
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (e: any) => {
       const db = e.target.result;
+      // 创建文件夹句柄存储
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
+      }
+      // 创建图片存储
+      if (!db.objectStoreNames.contains(IMAGES_STORE_NAME)) {
+        const imagesStore = db.createObjectStore(IMAGES_STORE_NAME, { keyPath: 'id' });
+        // 创建文件夹ID索引，方便按文件夹查询图片
+        imagesStore.createIndex('folderId', 'folderId', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -33,6 +48,50 @@ async function getHandle(folderId: string): Promise<FileSystemDirectoryHandle | 
     request.onsuccess = () => resolve(request.result || null);
     request.onerror = () => resolve(null);
   });
+}
+
+// 图片存储函数
+async function saveImageToDB(image: StoredImage) {
+  const db = await openDB();
+  const tx = db.transaction(IMAGES_STORE_NAME, 'readwrite');
+  await tx.objectStore(IMAGES_STORE_NAME).put(image);
+}
+
+// 按ID获取图片
+async function getImageFromDB(imageId: string): Promise<StoredImage | null> {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const request = db.transaction(IMAGES_STORE_NAME).objectStore(IMAGES_STORE_NAME).get(imageId);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => resolve(null);
+  });
+}
+
+// 按文件夹ID获取所有图片
+async function getImagesByFolderId(folderId: string): Promise<StoredImage[]> {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(IMAGES_STORE_NAME);
+    const store = tx.objectStore(IMAGES_STORE_NAME);
+    const index = store.index('folderId');
+    const request = index.getAll(folderId);
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => resolve([]);
+  });
+}
+
+// 删除图片
+async function deleteImageFromDB(imageId: string) {
+  const db = await openDB();
+  const tx = db.transaction(IMAGES_STORE_NAME, 'readwrite');
+  await tx.objectStore(IMAGES_STORE_NAME).delete(imageId);
+}
+
+// 生成持久化URL
+function createPersistentURL(file: File): string {
+  // 使用Blob URL，在应用会话期间有效
+  // 我们将通过IndexedDB持久化实际文件，以便在刷新后重新生成URL
+  return URL.createObjectURL(file);
 }
 
 interface FolderDetailProps {
@@ -119,7 +178,7 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     }
   }, [folder, onUpdateFolder, isSyncing]);
 
-  // 初始化：检查并恢复强连接
+  // 初始化：从IndexedDB加载图片并恢复强连接
   useEffect(() => {
     let isMounted = true;
     const init = async () => {
@@ -139,18 +198,50 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
           }
         }
       } else {
-        // 如果不是强连接，则直接使用已有的 URL（手动导入的 URL 在 Session 内通常有效，但在刷新后也会失效）
-        setSessionImages(folder.references);
+        // 非强连接模式：从IndexedDB加载图片
+        const storedImages = await getImagesByFolderId(folder.id);
+        if (isMounted) {
+          if (storedImages.length > 0) {
+            // 从IndexedDB加载的图片，重新生成URL
+            const imagesWithURLs = storedImages.map(storedImg => ({
+              id: storedImg.id,
+              url: createPersistentURL(storedImg.file),
+              title: storedImg.file.name,
+              completed: folder.references.find(ref => ref.id === storedImg.id)?.completed || false,
+              isLocalFile: false,
+              file: storedImg.file
+            }));
+            setSessionImages(imagesWithURLs);
+          } else {
+            // 没有存储的图片，直接使用已有的引用（可能是临时URL）
+            setSessionImages(folder.references);
+          }
+        }
       }
     };
     init();
     return () => { isMounted = false; };
-  }, [folder.id, folder.linkedPath]);
+  }, [folder.id, folder.linkedPath, folder.references]);
+
+  // 组件卸载时释放所有Blob URL
+  useEffect(() => {
+    return () => {
+      sessionImages.forEach(img => {
+        if (img.url.startsWith('blob:')) {
+          URL.revokeObjectURL(img.url);
+        }
+      });
+    };
+  }, [sessionImages]);
 
   // 处理点击导入/强连接
   const handleRequestStrongConnection = async () => {
-    if (!('showDirectoryPicker' in window)) {
-      showToast("您的浏览器不支持强连接，已切换至普通导入模式");
+    // 检测设备类型
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile || !('showDirectoryPicker' in window)) {
+      // 移动端或不支持showDirectoryPicker API的浏览器，直接使用手动导入
+      showToast("已切换至批量导入模式");
       fileInputRef.current?.click();
       return;
     }
@@ -160,7 +251,10 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
       await saveHandle(folder.id, handle);
       await syncLocalFolder(handle);
     } catch (err: any) {
-      if (err.name !== 'AbortError') showToast("无法访问文件夹");
+      if (err.name !== 'AbortError') {
+        showToast("无法访问文件夹，已切换至批量导入模式");
+        fileInputRef.current?.click();
+      }
     }
   };
 
@@ -178,30 +272,52 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     }
   };
 
-  // 手动批量导入（兼容移动端）
+  // 手动批量导入（兼容移动端，支持持久化存储）
   const handleManualImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setIsSyncing(true);
     
     const newRefs: SessionImage[] = [];
+    const storedImages: StoredImage[] = [];
+    
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const url = URL.createObjectURL(file);
+      const id = `m-${Date.now()}-${i}`;
+      const url = createPersistentURL(file);
+      
+      // 创建图片引用
       newRefs.push({
-        id: `m-${Date.now()}-${i}`,
+        id: id,
         url: url,
         title: file.name,
-        completed: false
+        completed: false,
+        isLocalFile: false,
+        file: file
+      });
+      
+      // 准备存储到IndexedDB
+      storedImages.push({
+        id: id,
+        file: file,
+        folderId: folder.id
       });
     }
 
+    // 存储图片到IndexedDB
+    for (const storedImg of storedImages) {
+      await saveImageToDB(storedImg);
+    }
+
+    // 更新文件夹引用
     const updatedRefs = [...folder.references, ...newRefs.map(({file, ...rest}) => ({...rest}))];
     onUpdateFolder({
       ...folder,
       references: updatedRefs,
       coverImage: folder.references.length === 0 ? newRefs[0].url : folder.coverImage
     });
+    
+    // 更新会话图片
     setSessionImages(prev => [...prev, ...newRefs]);
     
     setIsSyncing(false);
@@ -434,7 +550,20 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
 
       {isSelectionMode && (
         <div className="fixed bottom-0 inset-x-0 bg-white p-6 pb-12 rounded-t-[3rem] shadow-[0_-15px_40px_rgba(0,0,0,0.1)] z-50 flex justify-around animate-in slide-in-from-bottom duration-300">
-          <button onClick={() => { 
+          <button onClick={async () => { 
+              // 释放Blob URL并从IndexedDB删除图片
+              for (const id of selectedIds) {
+                const img = sessionImages.find(r => r.id === id);
+                if (img) {
+                  // 释放Blob URL
+                  if (img.url.startsWith('blob:')) {
+                    URL.revokeObjectURL(img.url);
+                  }
+                  // 从IndexedDB删除
+                  await deleteImageFromDB(id);
+                }
+              }
+              
               const nextRefs = folder.references.filter(r => !selectedIds.has(r.id));
               onUpdateFolder({...folder, references: nextRefs}); 
               setSessionImages(prev => prev.filter(r => !selectedIds.has(r.id)));
