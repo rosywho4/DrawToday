@@ -1,0 +1,7 @@
+{
+  "name": "Sketch Serenity Assistant",
+  "description": "A minimalist, aesthetic sketch assistant application for artists to practice gesture drawing, anatomy, and speed sketching with AI-powered inspiration and detailed statistics.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
