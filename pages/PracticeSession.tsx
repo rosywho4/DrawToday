@@ -25,7 +25,6 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
   const timerRef = useRef<number | null>(null);
   const uiTimeoutRef = useRef<number | null>(null);
   
-  // Ref to track multi-touch state without re-rendering unnecessarily
   const touchState = useRef({
     initialDistance: 0,
     initialScale: 1,
@@ -33,7 +32,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
     isZooming: false,
     isPanning: false,
     lastTapTime: 0,
-    initialOffset: { x: 0, y: 0 }
+    moved: false // 用于区分点击和拖拽
   });
 
   const images = React.useMemo(() => {
@@ -67,11 +66,8 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
       if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
       uiTimeoutRef.current = window.setTimeout(() => setShowUI(false), 3000);
     }
-  }, [currentIndex, isPaused, showUI, scale, offset]);
+  }, [currentIndex, isPaused, showUI]);
 
-  // Only reset the visual transformation, KEEP rotation and flipped if the user wants continuity 
-  // But usually for a NEW image, a full reset is expected.
-  // The user explicitly said "旋转后双指就复位了，不需要复位" - this refers to gesture interactions.
   const resetTransform = () => {
     setScale(1);
     setOffset({ x: 0, y: 0 });
@@ -114,15 +110,9 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Improved Multi-touch logic
   const handleTouchStart = (e: React.TouchEvent) => {
-    const now = Date.now();
+    touchState.current.moved = false;
     
-    // Triple tap for manual full reset (less likely to trigger by accident than double)
-    if (now - touchState.current.lastTapTime < 300) {
-      // touchState.current.lastTapTime is actually updated at the end
-    }
-
     if (e.touches.length === 2) {
       e.preventDefault();
       touchState.current.isZooming = true;
@@ -138,11 +128,11 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
       touchState.current.isZooming = false;
       touchState.current.lastTouch = { x: e.touches[0].pageX, y: e.touches[0].pageY };
     }
-    
-    touchState.current.lastTapTime = now;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    touchState.current.moved = true;
+    
     if (e.touches.length === 2 && touchState.current.isZooming) {
       e.preventDefault();
       const dist = Math.hypot(
@@ -150,12 +140,10 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
         e.touches[0].pageY - e.touches[1].pageY
       );
       if (touchState.current.initialDistance > 0) {
-        // Safe limit for zoom: 1x to 10x
         const newScale = Math.min(10, Math.max(0.8, (dist / touchState.current.initialDistance) * touchState.current.initialScale));
         setScale(newScale);
       }
     } else if (e.touches.length === 1 && touchState.current.isPanning) {
-      // Allow panning if slightly zoomed out or in
       const dx = e.touches[0].pageX - touchState.current.lastTouch.x;
       const dy = e.touches[0].pageY - touchState.current.lastTouch.y;
       
@@ -172,19 +160,21 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
     touchState.current.isZooming = false;
     touchState.current.isPanning = false;
     
-    // If scale is too small, snap back to 1
     if (scale < 1) {
       setScale(1);
       setOffset({ x: 0, y: 0 });
     }
   };
 
-  const toggleUI = (e: React.MouseEvent) => {
+  const handleContainerClick = (e: React.MouseEvent) => {
+    // 如果刚刚发生了拖拽或缩放，不触发点击
+    if (touchState.current.moved) return;
+    
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
-    // Don't toggle UI if the user is interacting with the image deeply
-    if (scale > 1.1) return; 
-    setShowUI(!showUI);
+    
+    // 移除之前的缩放限制，现在任何状态都可以点击切换 UI
+    setShowUI(prev => !prev);
   };
 
   const currentImage = images[currentIndex];
@@ -193,12 +183,11 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
   return (
     <div 
       className="fixed inset-0 w-full h-full bg-black flex items-center justify-center overflow-hidden touch-none"
-      onClick={toggleUI}
+      onClick={handleContainerClick}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Container that handles zoom and pan */}
       <div 
         className="absolute inset-0 w-full h-full flex items-center justify-center origin-center will-change-transform transition-transform duration-75"
         style={{ 
@@ -215,7 +204,6 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
         />
       </div>
 
-      {/* Mini Floating Timer */}
       <div className={`absolute top-12 right-6 z-50 transition-all duration-700 pointer-events-none ${showUI ? 'opacity-0 scale-75' : 'opacity-100 scale-100'}`}>
         <div className="bg-black/40 backdrop-blur-xl px-5 py-2.5 rounded-full border border-white/5 flex items-center gap-3">
           <div className="size-2.5 rounded-full bg-primary animate-pulse" />
@@ -225,7 +213,6 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
         </div>
       </div>
 
-      {/* Header UI */}
       <header className={`absolute top-0 left-0 right-0 p-6 pt-14 flex items-center justify-between z-[100] transition-all duration-500 bg-gradient-to-b from-black/80 to-transparent ${showUI ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-12 pointer-events-none'}`}>
         <button 
           onClick={(e) => { e.stopPropagation(); onQuit(); }} 
@@ -247,7 +234,6 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
         </button>
       </header>
 
-      {/* Bottom Controls UI */}
       <div className={`absolute bottom-0 left-0 right-0 px-6 pb-14 pt-24 transition-all duration-500 bg-gradient-to-t from-black/90 to-transparent flex flex-col items-center z-[100] ${showUI ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12 pointer-events-none'}`}>
         
         <div className="text-8xl font-thin tracking-[0.1em] text-white tabular-nums mb-12 drop-shadow-2xl opacity-90">

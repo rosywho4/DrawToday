@@ -1,9 +1,24 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Folder, Page, ImageReference } from '../types';
 
+// IndexedDB 配置，用于持久化存储 FileSystemDirectoryHandle
 const DB_NAME = 'SketchSerenityDB';
 const STORE_NAME = 'FolderHandles';
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 2); // 升级版本
+    request.onupgradeneeded = (e: any) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
 
 async function saveHandle(folderId: string, handle: FileSystemDirectoryHandle) {
   const db = await openDB();
@@ -16,15 +31,7 @@ async function getHandle(folderId: string): Promise<FileSystemDirectoryHandle | 
   return new Promise((resolve) => {
     const request = db.transaction(STORE_NAME).objectStore(STORE_NAME).get(folderId);
     request.onsuccess = () => resolve(request.result || null);
-  });
-}
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => resolve(null);
   });
 }
 
@@ -34,123 +41,175 @@ interface FolderDetailProps {
   onUpdateFolder: (folder: Folder) => void;
 }
 
+// 定义一个内部扩展类型，用于在内存中管理临时 URL
+interface SessionImage extends ImageReference {
+  file?: File;
+}
+
 const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdateFolder }) => {
+  const [sessionImages, setSessionImages] = useState<SessionImage[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [needsPermission, setNeedsPermission] = useState(false);
+  const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [toast, setToast] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<number | null>(null);
 
-  // Viewer zoom state
+  // 缩放状态
   const [vScale, setVScale] = useState(1);
   const vTouchState = useRef({ dist: 0, scale: 1 });
-
-  useEffect(() => {
-    const checkHandle = async () => {
-      if (folder.linkedPath) {
-        const handle = await getHandle(folder.id);
-        if (handle) {
-          try {
-            const permission = await (handle as any).queryPermission();
-            if (permission !== 'granted') setNeedsPermission(true);
-            else syncLocalFolder(handle, true);
-          } catch (e) { console.warn("Permission API not supported"); }
-        }
-      }
-    };
-    checkHandle();
-  }, [folder.id]);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleLinkFolder = async () => {
-    if (!('showDirectoryPicker' in window)) {
-      showToast("此浏览器不支持目录选择，已为您开启多选导入");
-      fileInputRef.current?.click();
-      return;
-    }
-    try {
-      // @ts-ignore
-      const handle = await window.showDirectoryPicker();
-      await saveHandle(folder.id, handle);
-      await syncLocalFolder(handle);
-    } catch (err: any) {
-      if (err.name !== 'AbortError') showToast("无法访问文件夹，请检查权限");
-    }
-  };
-
-  const syncLocalFolder = async (handle: FileSystemDirectoryHandle, silent = false) => {
+  // 核心功能：同步本地文件夹并生成预览 URL
+  const syncLocalFolder = useCallback(async (handle: FileSystemDirectoryHandle, silent = false) => {
+    if (isSyncing) return;
     setIsSyncing(true);
-    const newRefs: ImageReference[] = [];
+    
+    const newSessionImages: SessionImage[] = [];
     const supportedExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    
     try {
       // @ts-ignore
       for await (const entry of handle.values()) {
         if (entry.kind === 'file') {
           const file = await (entry as any).getFile();
           if (supportedExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
-            newRefs.push({
-              id: `fs-${entry.name}-${file.lastModified}`,
-              url: URL.createObjectURL(file),
-              completed: folder.references.find(r => r.title === entry.name)?.completed || false,
+            const url = URL.createObjectURL(file);
+            // 匹配已有的完成状态
+            const existingRef = folder.references.find(r => r.title === entry.name);
+            newSessionImages.push({
+              id: `fs-${entry.name}-${file.size}`,
+              url: url,
               title: entry.name,
-              isLocalFile: true
+              completed: existingRef?.completed || false,
+              isLocalFile: true,
+              file: file
             });
           }
         }
       }
+
+      // 更新全局状态，持久化 meta 信息（但不持久化 URL，因为 URL 会失效）
+      const updatedRefs: ImageReference[] = newSessionImages.map(({file, ...rest}) => ({...rest}));
+      
       onUpdateFolder({
         ...folder,
-        references: [...newRefs, ...folder.references.filter(r => !r.isLocalFile)],
-        coverImage: newRefs.length > 0 ? newRefs[0].url : folder.coverImage,
+        references: updatedRefs,
+        coverImage: updatedRefs.length > 0 ? updatedRefs[0].url : folder.coverImage,
         linkedPath: handle.name,
-        lastUpdated: '刚刚同步'
       });
-      if (!silent) showToast(`同步完成：找到 ${newRefs.length} 张素材`);
+
+      setSessionImages(newSessionImages);
+      setPermissionState('granted');
+      if (!silent) showToast(`成功读取 ${newSessionImages.length} 张本地原图`);
     } catch (err) {
-      if (!silent) showToast("同步失败");
-    } finally { setIsSyncing(false); }
+      console.error(err);
+      setPermissionState('denied');
+      if (!silent) showToast("读取失败，请检查文件夹访问权限");
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [folder, onUpdateFolder, isSyncing]);
+
+  // 初始化：检查并恢复强连接
+  useEffect(() => {
+    let isMounted = true;
+    const init = async () => {
+      if (folder.linkedPath) {
+        const handle = await getHandle(folder.id);
+        if (handle) {
+          try {
+            // @ts-ignore
+            const permission = await handle.queryPermission({ mode: 'readwrite' });
+            if (permission === 'granted') {
+              if (isMounted) syncLocalFolder(handle, true);
+            } else {
+              if (isMounted) setPermissionState('prompt');
+            }
+          } catch (e) {
+            if (isMounted) setPermissionState('denied');
+          }
+        }
+      } else {
+        // 如果不是强连接，则直接使用已有的 URL（手动导入的 URL 在 Session 内通常有效，但在刷新后也会失效）
+        setSessionImages(folder.references);
+      }
+    };
+    init();
+    return () => { isMounted = false; };
+  }, [folder.id, folder.linkedPath]);
+
+  // 处理点击导入/强连接
+  const handleRequestStrongConnection = async () => {
+    if (!('showDirectoryPicker' in window)) {
+      showToast("您的浏览器不支持强连接，已切换至普通导入模式");
+      fileInputRef.current?.click();
+      return;
+    }
+    try {
+      // @ts-ignore
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await saveHandle(folder.id, handle);
+      await syncLocalFolder(handle);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') showToast("无法访问文件夹");
+    }
   };
 
+  // 恢复现有强连接的权限
+  const handleRestorePermission = async () => {
+    const handle = await getHandle(folder.id);
+    if (handle) {
+      try {
+        // @ts-ignore
+        const permission = await handle.requestPermission({ mode: 'readwrite' });
+        if (permission === 'granted') syncLocalFolder(handle);
+      } catch (e) {
+        showToast("授权失败");
+      }
+    }
+  };
+
+  // 手动批量导入（兼容移动端）
   const handleManualImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setIsSyncing(true);
-    const newRefs: ImageReference[] = [];
     
+    const newRefs: SessionImage[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      // Use createObjectURL for performance on mobile instead of base64
       const url = URL.createObjectURL(file);
-      newRefs.push({ 
-        id: `m-${Date.now()}-${i}-${file.size}`, 
-        url, 
-        completed: false, 
-        title: file.name 
+      newRefs.push({
+        id: `m-${Date.now()}-${i}`,
+        url: url,
+        title: file.name,
+        completed: false
       });
     }
-    
+
+    const updatedRefs = [...folder.references, ...newRefs.map(({file, ...rest}) => ({...rest}))];
     onUpdateFolder({
       ...folder,
-      references: [...folder.references, ...newRefs],
+      references: updatedRefs,
       coverImage: folder.references.length === 0 ? newRefs[0].url : folder.coverImage
     });
+    setSessionImages(prev => [...prev, ...newRefs]);
     
     setIsSyncing(false);
-    showToast(`成功导入 ${newRefs.length} 张图片`);
+    showToast(`成功导入 ${newRefs.length} 张素材`);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
+  // 各种操作逻辑...
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -159,11 +218,11 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
   };
 
   const handleSelectAll = () => {
-    if (selectedIds.size === folder.references.length) {
+    if (selectedIds.size === sessionImages.length) {
       setSelectedIds(new Set());
       setIsSelectionMode(false);
     } else {
-      setSelectedIds(new Set(folder.references.map(r => r.id)));
+      setSelectedIds(new Set(sessionImages.map(r => r.id)));
       setIsSelectionMode(true);
     }
   };
@@ -174,6 +233,9 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
       selectedIds.has(r.id) ? { ...r, completed: !r.completed } : r
     );
     onUpdateFolder({ ...folder, references: nextRefs });
+    setSessionImages(prev => prev.map(r => 
+      selectedIds.has(r.id) ? { ...r, completed: !r.completed } : r
+    ));
     setIsSelectionMode(false);
     setSelectedIds(new Set());
     showToast("状态已更新");
@@ -195,7 +257,6 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     }
   };
 
-  // Viewer touch handlers
   const vTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       vTouchState.current.dist = Math.hypot(
@@ -219,50 +280,30 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
   return (
     <div className="flex flex-col min-h-screen select-none">
       <input type="file" ref={fileInputRef} multiple accept="image/*" className="hidden" onChange={handleManualImport} />
-      <input type="file" ref={folderInputRef} {...({webkitdirectory: '', directory: ''} as any)} className="hidden" onChange={handleManualImport} />
 
-      {/* 图片查看器 */}
+      {/* 查看器 */}
       {viewerIndex !== null && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 touch-none"
              onTouchStart={vTouchStart} onTouchMove={vTouchMove}>
-          <button 
-            onClick={() => { setViewerIndex(null); setVScale(1); }} 
-            className="absolute top-14 right-6 size-11 flex items-center justify-center rounded-full bg-white/20 text-white z-[110] active:scale-90 transition-transform"
-          >
+          <button onClick={() => { setViewerIndex(null); setVScale(1); }} className="absolute top-14 right-6 size-11 flex items-center justify-center rounded-full bg-white/20 text-white z-[110] active:scale-90 transition-transform">
             <span className="material-symbols-outlined">close</span>
           </button>
           
           <div className="relative w-full h-full flex items-center justify-center overflow-hidden" onClick={() => { setViewerIndex(null); setVScale(1); }}>
             {vScale === 1 && (
               <>
-                <button 
-                  disabled={viewerIndex === 0}
-                  onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex - 1); }}
-                  className="absolute left-4 size-14 flex items-center justify-center rounded-full bg-black/40 text-white disabled:opacity-10 transition-all active:scale-90 z-[110]"
-                >
+                <button disabled={viewerIndex === 0} onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex - 1); }} className="absolute left-4 size-14 flex items-center justify-center rounded-full bg-black/40 text-white disabled:opacity-10 transition-all active:scale-90 z-[110]">
                   <span className="material-symbols-outlined text-3xl">chevron_left</span>
                 </button>
-
-                <button 
-                  disabled={viewerIndex === folder.references.length - 1}
-                  onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex + 1); }}
-                  className="absolute right-4 size-14 flex items-center justify-center rounded-full bg-black/40 text-white disabled:opacity-10 transition-all active:scale-90 z-[110]"
-                >
+                <button disabled={viewerIndex === sessionImages.length - 1} onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex + 1); }} className="absolute right-4 size-14 flex items-center justify-center rounded-full bg-black/40 text-white disabled:opacity-10 transition-all active:scale-90 z-[110]">
                   <span className="material-symbols-outlined text-3xl">chevron_right</span>
                 </button>
               </>
             )}
-
-            <img 
-              src={folder.references[viewerIndex].url} 
-              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl transition-transform duration-100 ease-out" 
-              style={{ transform: `scale(${vScale})` }}
-              alt="Preview" 
-              onClick={(e) => e.stopPropagation()}
-            />
+            <img src={sessionImages[viewerIndex].url} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl transition-transform duration-100 ease-out" style={{ transform: `scale(${vScale})` }} alt="Preview" onClick={(e) => e.stopPropagation()} />
           </div>
           <div className="absolute bottom-12 px-6 py-2 bg-black/40 rounded-full text-white/80 text-sm font-black tracking-widest tabular-nums z-[110]">
-            {viewerIndex + 1} / {folder.references.length}
+            {viewerIndex + 1} / {sessionImages.length}
           </div>
         </div>
       )}
@@ -275,11 +316,23 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
           </button>
           <div className="min-w-0">
             <h1 className="text-xl font-black truncate">{isSelectionMode ? `已选 ${selectedIds.size} 项` : folder.name}</h1>
-            {folder.linkedPath && !isSelectionMode && <p className="text-[10px] font-black text-primary uppercase tracking-wider">本地：{folder.linkedPath}</p>}
+            {folder.linkedPath && !isSelectionMode && (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="material-symbols-outlined text-[10px] text-primary filled">link</span>
+                <p className="text-[10px] font-black text-primary uppercase tracking-wider truncate max-w-[120px]">强连接：{folder.linkedPath}</p>
+              </div>
+            )}
           </div>
         </div>
         
         <div className="flex items-center gap-3">
+          {folder.linkedPath && !isSelectionMode && (
+             <button onClick={() => {
+                getHandle(folder.id).then(h => h && syncLocalFolder(h));
+             }} className={`material-symbols-outlined text-primary ${isSyncing ? 'animate-spin' : ''}`}>
+               sync
+             </button>
+          )}
           {!isSelectionMode && (
             <>
               <button onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')} className="material-symbols-outlined text-slate-400">
@@ -290,44 +343,51 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
               </button>
             </>
           )}
-          {isSelectionMode && folder.references.length > 0 && (
-            <button 
-              onClick={handleSelectAll} 
-              className={`material-symbols-outlined transition-colors ${selectedIds.size === folder.references.length ? 'text-primary' : 'text-slate-400'}`}
-            >
-              {selectedIds.size === folder.references.length ? 'deselect' : 'select_all'}
+          {isSelectionMode && sessionImages.length > 0 && (
+            <button onClick={handleSelectAll} className={`material-symbols-outlined transition-colors ${selectedIds.size === sessionImages.length ? 'text-primary' : 'text-slate-400'}`}>
+              {selectedIds.size === sessionImages.length ? 'deselect' : 'select_all'}
             </button>
           )}
         </div>
       </header>
 
-      {needsPermission && (
-        <div className="bg-primary/10 p-4 flex items-center justify-between border-b border-primary/5">
-          <span className="text-sm font-black text-primary">连接已断开</span>
-          <button onClick={async () => {
-            const h = await getHandle(folder.id);
-            if (h && await (h as any).requestPermission({mode: 'readwrite'}) === 'granted') { setNeedsPermission(false); syncLocalFolder(h); }
-          }} className="bg-primary text-white text-[11px] px-4 py-2 rounded-full font-black uppercase tracking-wider">恢复访问</button>
+      {/* 强连接权限恢复提示 */}
+      {folder.linkedPath && permissionState === 'prompt' && (
+        <div className="bg-primary/10 px-6 py-4 flex items-center justify-between border-b border-primary/5 animate-in slide-in-from-top duration-300">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-primary">security</span>
+            <span className="text-xs font-black text-primary">需要授权以直接读取本地原图</span>
+          </div>
+          <button onClick={handleRestorePermission} className="bg-primary text-white text-[11px] px-5 py-2.5 rounded-full font-black uppercase tracking-wider shadow-lg shadow-primary/20 active:scale-95 transition-transform">重新授权</button>
         </div>
       )}
 
-      {toast && <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[120] bg-black/80 text-white px-5 py-2.5 rounded-full text-xs font-black animate-in fade-in slide-in-from-top-2">{toast}</div>}
+      {toast && <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[120] bg-black/80 text-white px-5 py-2.5 rounded-full text-xs font-black animate-in fade-in slide-in-from-top-2 text-center shadow-2xl">{toast}</div>}
 
       <main className="flex-1 p-4 pb-40">
-        {folder.references.length === 0 ? (
+        {isSyncing && sessionImages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+             <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+             <p className="text-slate-400 text-sm font-black">正在读取本地图库...</p>
+          </div>
+        ) : sessionImages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="size-24 rounded-full bg-white flex items-center justify-center shadow-sm opacity-20 mb-8">
               <span className="material-symbols-outlined text-5xl">folder_zip</span>
             </div>
             <p className="text-slate-400 text-sm font-black mb-10">此图库尚无素材</p>
-            <div className="flex flex-col gap-4 w-56">
-              <button onClick={handleLinkFolder} className="bg-primary text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-primary/20">导入图片</button>
-              <button onClick={() => fileInputRef.current?.click()} className="bg-white text-slate-400 py-4 rounded-2xl font-black text-sm border border-black/5">从相册添加</button>
+            <div className="flex flex-col gap-4 w-64">
+              <button onClick={handleRequestStrongConnection} className="bg-primary text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-primary/20 flex items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-lg">folder_open</span> 强连接本地目录
+              </button>
+              <button onClick={() => fileInputRef.current?.click()} className="bg-white text-slate-400 py-4 rounded-2xl font-black text-sm border border-black/5 flex items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-lg">add_photo_alternate</span> 批量导入图片
+              </button>
             </div>
           </div>
         ) : (
           <div className={viewMode === 'grid' ? "grid grid-cols-3 gap-3" : "space-y-3"}>
-            {folder.references.map((ref, idx) => (
+            {sessionImages.map((ref, idx) => (
               <div 
                 key={ref.id} 
                 onClick={() => isSelectionMode ? toggleSelect(ref.id) : setViewerIndex(idx)}
@@ -372,19 +432,16 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
         </div>
       )}
 
-      {/* 多选模式 */}
       {isSelectionMode && (
         <div className="fixed bottom-0 inset-x-0 bg-white p-6 pb-12 rounded-t-[3rem] shadow-[0_-15px_40px_rgba(0,0,0,0.1)] z-50 flex justify-around animate-in slide-in-from-bottom duration-300">
-          <button 
-            onClick={() => { 
+          <button onClick={() => { 
               const nextRefs = folder.references.filter(r => !selectedIds.has(r.id));
               onUpdateFolder({...folder, references: nextRefs}); 
+              setSessionImages(prev => prev.filter(r => !selectedIds.has(r.id)));
               setIsSelectionMode(false); 
               setSelectedIds(new Set()); 
               showToast("已移除选中项");
-            }} 
-            className="flex flex-col items-center gap-2"
-          >
+            }} className="flex flex-col items-center gap-2">
             <div className="size-15 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center active:scale-90 transition-transform"><span className="material-symbols-outlined text-2xl">delete</span></div>
             <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">移除</span>
           </button>
