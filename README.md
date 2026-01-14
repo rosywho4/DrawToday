@@ -1,20 +1,143 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# DrawToday - 图片画廊与练习管理应用
 
-# Run and deploy your AI Studio app
+一个基于React 19 + TypeScript的Web应用，用于管理图片画廊并提供练习绘画/观察的功能。支持移动端使用，图片持久化存储，以及灵活的画廊管理。
 
-This contains everything you need to run your app locally.
+## 🌟 核心功能
 
-View your app in AI Studio: https://ai.studio/apps/drive/1Ppo-U6ifou5-KiJFHB8gGgIIyt40Q_WY
+### 📁 画廊管理
+- 创建和管理多个图片画廊
+- 导入本地图片到画廊
+- 自动为新画廊设置第一张图片为默认封面
+- 支持长按画廊封面修改画廊封面
+- 显示最近打开的画廊列表
+- 画廊封面持久化存储
 
-## Run Locally
+### 🎨 练习功能
+- 开启绘画/观察练习挑战
+- 自定义练习时长
+- 自动播放画廊中的图片
+- 暂停/继续练习
+- 记录练习进度
 
-**Prerequisites:**  Node.js
+### 💾 数据持久化
+- 使用IndexedDB存储图片文件
+- LocalStorage保存应用状态
+- 支持页面刷新后数据保留
+- 移动端图片持久化支持
 
+### 📱 移动端适配
+- 响应式设计，支持移动端使用
+- 触摸友好的界面交互
+- 移动端图片导入和管理
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🛠️ 技术栈
+
+- **前端框架**: React 19 + TypeScript
+- **构建工具**: Vite
+- **样式方案**: Tailwind CSS
+- **数据存储**: IndexedDB + LocalStorage
+- **图表库**: Recharts
+- **API**: FileSystemAccess API (用于文件访问)
+
+## 📦 安装与运行
+
+### 前提条件
+- Node.js (版本 18 或更高)
+
+### 安装步骤
+
+1. 克隆项目到本地
+2. 安装依赖包
+   ```bash
+   npm install
+   ```
+
+3. 运行开发服务器
+   ```bash
+   npm run dev
+   ```
+
+4. 在浏览器中打开 http://localhost:5173
+
+### 构建生产版本
+
+```bash
+npm run build
+```
+
+构建后的文件将输出到 `dist` 目录，可以使用以下命令预览生产版本：
+
+```bash
+npm run preview
+```
+
+## 🚀 使用指南
+
+### 创建和管理画廊
+1. 点击"创建画廊"按钮创建新的图片画廊
+2. 为画廊命名并保存
+3. 点击画廊进入图片管理界面
+4. 点击"导入图片"按钮添加图片到画廊
+
+### 设置画廊封面
+1. 在画廊详情页面，点击任意图片
+2. 选择"设为封面"
+3. 返回首页，画廊封面将更新
+
+### 最近打开的画廊
+- 系统会自动记录每个画廊的最后打开时间
+- 首页"最近打开"区域将按时间倒序显示画廊
+
+### 开启练习挑战
+1. 进入画廊详情页面
+2. 点击"开启挑战"按钮
+3. 设置练习时长（可选）
+4. 点击"开始"按钮开始练习
+5. 练习过程中可以暂停/继续或退出
+
+## 📁 项目结构
+
+```
+├── src/
+│   ├── components/         # React组件
+│   ├── pages/             # 页面组件
+│   ├── types.ts           # TypeScript类型定义
+│   ├── App.tsx            # 主应用组件
+│   └── main.tsx           # 应用入口
+├── package.json           # 项目依赖和脚本
+├── tsconfig.json          # TypeScript配置
+├── vite.config.ts         # Vite配置
+└── tailwind.config.js     # Tailwind CSS配置
+```
+
+## 🎯 核心功能说明
+
+### 图片持久化机制
+- 应用使用IndexedDB存储图片文件，确保图片不会因页面刷新而丢失
+- 为每个图片生成持久化的Blob URL，用于在界面中显示
+- 画廊封面使用图片ID关联，确保封面图片持久有效
+
+### 画廊封面管理
+- 当设置新的画廊封面时，系统会记录图片ID而不仅仅是URL
+- 页面加载时，会自动从IndexedDB重新生成有效URL
+- 确保即使在多个画廊间切换设置封面，所有画廊的封面都能保持有效
+
+### 最近打开功能
+- 每个画廊都记录了最后打开时间
+- 首页的"最近打开"列表按最后打开时间倒序排列
+- 方便快速访问常用的画廊
+
+## 📱 移动端使用注意事项
+
+- 确保浏览器支持FileSystemAccess API
+- 图片导入后会自动保存到IndexedDB
+- 建议在稳定网络环境下使用
+- 移动端支持触摸操作，如长按修改封面等
+
+## 🤝 贡献
+
+欢迎提交Issue和Pull Request来改进这个项目！
+
+## 📄 许可证
+
+MIT License
