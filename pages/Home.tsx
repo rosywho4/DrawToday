@@ -1,6 +1,47 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Folder, Page } from '../types';
+
+// IndexedDB 配置，用于从数据库加载图片
+const DB_NAME = 'SketchSerenityDB';
+const IMAGES_STORE_NAME = 'Images';
+const DB_VERSION = 3;
+
+interface StoredImage {
+  id: string;
+  file: File;
+  folderId: string;
+}
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (e: any) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IMAGES_STORE_NAME)) {
+        const imagesStore = db.createObjectStore(IMAGES_STORE_NAME, { keyPath: 'id' });
+        imagesStore.createIndex('folderId', 'folderId', { unique: false });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// 按ID获取图片
+async function getImageFromDB(imageId: string): Promise<StoredImage | null> {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const request = db.transaction(IMAGES_STORE_NAME).objectStore(IMAGES_STORE_NAME).get(imageId);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => resolve(null);
+  });
+}
+
+// 生成持久化URL
+function createPersistentURL(file: File): string {
+  return URL.createObjectURL(file);
+}
 
 interface HomeProps {
   folders: Folder[];
@@ -20,9 +61,56 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
   const [isAdding, setIsAdding] = useState(false);
   const [isRenaming, setIsRenaming] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
+  const [processedFolders, setProcessedFolders] = useState<Folder[]>([]);
   
   const longPressTimer = useRef<number | null>(null);
   const isLongPressActive = useRef(false);
+
+  // 处理文件夹列表，确保封面URL有效
+  useEffect(() => {
+    const processFolders = async () => {
+      const updatedFolders = await Promise.all(
+        folders.map(async (folder) => {
+          // 检查封面URL是否是无效的Blob URL
+          if (folder.coverImage && folder.coverImage.startsWith('blob:') && folder.coverImageId) {
+            // 尝试从IndexedDB加载图片并重新生成URL
+            const storedImg = await getImageFromDB(folder.coverImageId);
+            if (storedImg) {
+              return {
+                ...folder,
+                coverImage: createPersistentURL(storedImg.file)
+              };
+            }
+          }
+          // 检查是否有封面图片ID但没有封面URL，或者封面URL无效
+          if (folder.coverImageId && (!folder.coverImage || folder.coverImage.startsWith('blob:'))) {
+            const storedImg = await getImageFromDB(folder.coverImageId);
+            if (storedImg) {
+              return {
+                ...folder,
+                coverImage: createPersistentURL(storedImg.file)
+              };
+            }
+          }
+          return folder;
+        })
+      );
+      setProcessedFolders(updatedFolders);
+    };
+
+    processFolders();
+  }, [folders]);
+
+  // 组件卸载时释放所有Blob URL
+  useEffect(() => {
+    return () => {
+      processedFolders.forEach(folder => {
+        if (folder.coverImage && folder.coverImage.startsWith('blob:')) {
+          URL.revokeObjectURL(folder.coverImage);
+        }
+      });
+    };
+  }, [processedFolders]);
 
   const startLongPress = (folderId: string) => {
     isLongPressActive.current = false;
@@ -65,7 +153,10 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
     }
   };
 
-  const pinnedFolder = folders.length > 0 ? folders[0] : null;
+  // 按照最近打开时间排序，获取最近打开的图库
+  const pinnedFolder = processedFolders.length > 0 ? 
+    [...processedFolders].sort((a, b) => new Date(b.lastOpened).getTime() - new Date(a.lastOpened).getTime())[0] : 
+    null;
 
   return (
     <div className="flex flex-col min-h-screen pb-32">
@@ -75,7 +166,7 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
           <div className="w-full max-w-xs bg-white rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-200 text-center">
             <h3 className="text-xl font-black mb-2">确认删除？</h3>
             <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-              确定要删除 <span className="text-text-main font-bold">"{folders.find(f => f.id === showDeleteConfirm)?.name}"</span> 吗？
+              确定要删除 <span className="text-text-main font-bold">"{processedFolders.find(f => f.id === showDeleteConfirm)?.name}"</span> 吗？
             </p>
             <div className="flex flex-col gap-3">
               <button onClick={() => { onDeleteFolder(showDeleteConfirm); setShowDeleteConfirm(null); setActiveMenuFolderId(null); }} className="w-full py-4 font-bold text-white bg-rose-500 rounded-2xl shadow-lg shadow-rose-200">彻底删除</button>
@@ -175,7 +266,7 @@ const Home: React.FC<HomeProps> = ({ folders, onNavigate, onAddFolder, onCopyFol
           </div>
 
           <div className={viewMode === 'grid' ? "grid grid-cols-2 gap-4" : "space-y-4"}>
-            {folders.map((folder) => (
+            {processedFolders.map((folder) => (
               <div 
                 key={folder.id} 
                 onClick={() => handleFolderClick(folder)}

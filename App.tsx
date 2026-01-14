@@ -44,7 +44,19 @@ const App: React.FC = () => {
   const activeFolder = folders.find(f => f.id === activeFolderId) || null;
 
   const handleNavigate = (page: Page, folder?: Folder) => {
-    if (folder) setActiveFolderId(folder.id);
+    if (folder) {
+      setActiveFolderId(folder.id);
+      // 更新最近打开时间
+      setFolders(prev => prev.map(f => {
+        if (f.id === folder.id) {
+          return {
+            ...f,
+            lastOpened: new Date().toISOString()
+          };
+        }
+        return f;
+      }));
+    }
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
@@ -72,6 +84,7 @@ const App: React.FC = () => {
       id: Date.now().toString(),
       name,
       lastUpdated: '刚刚',
+      lastOpened: new Date().toISOString(),
       coverImage: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?q=80&w=400&auto=format&fit=crop',
       references: []
     };
@@ -85,7 +98,8 @@ const App: React.FC = () => {
       ...target,
       id: Date.now().toString(),
       name: `${target.name} (副本)`,
-      lastUpdated: '刚刚'
+      lastUpdated: '刚刚',
+      lastOpened: new Date().toISOString()
     };
     setFolders(prev => [copied, ...prev]);
   };

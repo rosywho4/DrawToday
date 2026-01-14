@@ -11,7 +11,9 @@ export interface Folder {
   id: string;
   name: string;
   lastUpdated: string;
+  lastOpened: string; // 最近打开时间
   coverImage: string;
+  coverImageId?: string; // 封面图片的ID，用于重新生成封面URL
   references: ImageReference[];
   linkedPath?: string; // 存储本地文件夹的友好路径名称
 }

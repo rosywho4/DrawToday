@@ -6,6 +6,7 @@ export const MOCK_FOLDERS: Folder[] = [
     id: '1',
     name: '解剖学 - 手部',
     lastUpdated: '昨天',
+    lastOpened: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 昨天
     coverImage: 'https://images.unsplash.com/photo-1516550893923-42d28e5677af?q=80&w=400&auto=format&fit=crop',
     references: Array.from({ length: 48 }).map((_, i) => ({
       id: `h-${i}`,
@@ -17,6 +18,7 @@ export const MOCK_FOLDERS: Folder[] = [
     id: '2',
     name: '赛博朋克道具',
     lastUpdated: '3天前',
+    lastOpened: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3天前
     coverImage: 'https://images.unsplash.com/photo-1605142859862-978be7eba909?q=80&w=400&auto=format&fit=crop',
     references: []
   },
@@ -24,6 +26,7 @@ export const MOCK_FOLDERS: Folder[] = [
     id: '3',
     name: '风景研究',
     lastUpdated: '1周前',
+    lastOpened: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 1周前
     coverImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=400&auto=format&fit=crop',
     references: []
   },
@@ -31,6 +34,7 @@ export const MOCK_FOLDERS: Folder[] = [
     id: '4',
     name: '希腊雕像',
     lastUpdated: '2周前',
+    lastOpened: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 2周前
     coverImage: 'https://images.unsplash.com/photo-1549490349-8643362247b5?q=80&w=400&auto=format&fit=crop',
     references: []
   }

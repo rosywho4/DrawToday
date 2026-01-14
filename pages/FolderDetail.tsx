@@ -114,6 +114,7 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
   const [isSyncing, setIsSyncing] = useState(false);
   const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [toast, setToast] = useState<string | null>(null);
+  const [showSetCoverMenu, setShowSetCoverMenu] = useState<string | null>(null); // 存储要设为封面的图片ID
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<number | null>(null);
@@ -159,10 +160,13 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
       // 更新全局状态，持久化 meta 信息（但不持久化 URL，因为 URL 会失效）
       const updatedRefs: ImageReference[] = newSessionImages.map(({file, ...rest}) => ({...rest}));
       
+      // 如果是第一次导入图片，将第一张图片设为封面
+      const newCoverImage = updatedRefs.length > 0 && folder.references.length === 0 ? updatedRefs[0].url : folder.coverImage;
+      
       onUpdateFolder({
         ...folder,
         references: updatedRefs,
-        coverImage: updatedRefs.length > 0 ? updatedRefs[0].url : folder.coverImage,
+        coverImage: newCoverImage,
         linkedPath: handle.name,
       });
 
@@ -311,10 +315,14 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
 
     // 更新文件夹引用
     const updatedRefs = [...folder.references, ...newRefs.map(({file, ...rest}) => ({...rest}))];
+    
+    // 如果是第一次导入图片，将第一张图片设为封面
+    const newCoverImage = folder.references.length === 0 && newRefs.length > 0 ? newRefs[0].url : folder.coverImage;
+    
     onUpdateFolder({
       ...folder,
       references: updatedRefs,
-      coverImage: folder.references.length === 0 ? newRefs[0].url : folder.coverImage
+      coverImage: newCoverImage
     });
     
     // 更新会话图片
@@ -361,9 +369,22 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     if (isSelectionMode) return;
     longPressTimer.current = window.setTimeout(() => {
       if (navigator.vibrate) navigator.vibrate(50);
-      setIsSelectionMode(true);
-      setSelectedIds(new Set([id]));
+      setShowSetCoverMenu(id);
     }, 600);
+  };
+
+  // 设置封面处理函数
+  const handleSetAsCover = (imageId: string) => {
+    const image = sessionImages.find(img => img.id === imageId);
+    if (image) {
+      onUpdateFolder({
+        ...folder,
+        coverImage: image.url,
+        coverImageId: imageId // 存储封面图片的ID
+      });
+      showToast("封面已更新");
+    }
+    setShowSetCoverMenu(null);
   };
 
   const clearLongPress = () => {
@@ -396,6 +417,22 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
   return (
     <div className="flex flex-col min-h-screen select-none">
       <input type="file" ref={fileInputRef} multiple accept="image/*" className="hidden" onChange={handleManualImport} />
+
+      {/* 设置封面菜单 */}
+      {showSetCoverMenu && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-6">
+          <div className="w-full max-w-xs bg-white rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-200 text-center">
+            <h3 className="text-xl font-black mb-2">设置封面</h3>
+            <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+              确定要将这张图片设为图库封面吗？
+            </p>
+            <div className="flex flex-col gap-3">
+              <button onClick={() => handleSetAsCover(showSetCoverMenu)} className="w-full py-4 font-bold text-white bg-primary rounded-2xl shadow-lg shadow-primary/20">确定</button>
+              <button onClick={() => setShowSetCoverMenu(null)} className="w-full py-4 font-bold text-slate-400 bg-slate-50 rounded-2xl">取消</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 查看器 */}
       {viewerIndex !== null && (
