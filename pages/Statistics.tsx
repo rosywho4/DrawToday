@@ -1,9 +1,13 @@
 
 import React from 'react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, Cell } from 'recharts';
-import { INITIAL_STATS } from '../constants';
+import { PracticeStats } from '../types';
 
-const Statistics: React.FC = () => {
+interface StatisticsProps {
+  stats: PracticeStats;
+}
+
+const Statistics: React.FC<StatisticsProps> = ({ stats }) => {
   return (
     <div className="flex flex-col min-h-screen bg-bg-serenity pb-32">
       <header className="sticky top-0 z-50 bg-bg-serenity/80 backdrop-blur-md px-6 pt-12 pb-4 flex items-center justify-center border-b border-black/5">
@@ -16,7 +20,7 @@ const Statistics: React.FC = () => {
           <div className="relative z-10">
             <p className="text-white/80 text-sm font-medium mb-1">已连续练习</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-5xl font-black tracking-tighter">{INITIAL_STATS.streak}</span>
+              <span className="text-5xl font-black tracking-tighter">{stats.streak}</span>
               <span className="text-xl font-bold">天</span>
             </div>
             {/* User percentage badge removed as requested */}
@@ -34,9 +38,9 @@ const Statistics: React.FC = () => {
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">总时长</p>
             </div>
             <div className="flex items-baseline gap-1 text-text-main">
-              <span className="text-2xl font-black">{INITIAL_STATS.totalHours}</span>
+              <span className="text-2xl font-black">{stats.totalHours}</span>
               <span className="text-xs font-bold text-slate-300">h</span>
-              <span className="text-2xl font-black ml-1">{INITIAL_STATS.totalMinutes}</span>
+              <span className="text-2xl font-black ml-1">{stats.totalMinutes}</span>
               <span className="text-xs font-bold text-slate-300">m</span>
             </div>
           </div>
@@ -46,7 +50,7 @@ const Statistics: React.FC = () => {
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">作品数</p>
             </div>
             <div className="flex items-baseline gap-1 text-text-main">
-              <span className="text-2xl font-black">{INITIAL_STATS.totalWorks}</span>
+              <span className="text-2xl font-black">{stats.totalWorks}</span>
               <span className="text-xs font-bold text-slate-300">张</span>
             </div>
           </div>
@@ -57,7 +61,7 @@ const Statistics: React.FC = () => {
           <div className="flex justify-between items-start mb-8">
             <div>
               <h3 className="text-lg font-black">本周趋势</h3>
-              <p className="text-sm text-slate-400 font-medium">累计练习 420 分钟</p>
+              <p className="text-sm text-slate-400 font-medium">累计练习 {stats.weeklyTrend.reduce((sum, day) => sum + day.minutes, 0)} 分钟</p>
             </div>
             <div className="flex items-center gap-1 text-primary bg-primary/10 px-3 py-1.5 rounded-xl">
               <span className="material-symbols-outlined text-sm font-bold">trending_up</span>
@@ -67,7 +71,7 @@ const Statistics: React.FC = () => {
 
           <div className="h-48 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={INITIAL_STATS.weeklyTrend}>
+              <BarChart data={stats.weeklyTrend}>
                 <XAxis 
                   dataKey="day" 
                   axisLine={false} 
@@ -76,10 +80,10 @@ const Statistics: React.FC = () => {
                   dy={10}
                 />
                 <Bar dataKey="minutes" radius={[20, 20, 20, 20]}>
-                  {INITIAL_STATS.weeklyTrend.map((entry, index) => (
+                  {stats.weeklyTrend.map((entry, index) => (
                     <Cell 
                       key={`cell-${index}`} 
-                      fill={index === INITIAL_STATS.weeklyTrend.length - 1 ? '#6DD5ED' : '#F1F5F9'} 
+                      fill={index === stats.weeklyTrend.length - 1 ? '#6DD5ED' : '#F1F5F9'} 
                     />
                   ))}
                 </Bar>

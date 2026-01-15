@@ -3,11 +3,41 @@ const isCapacitorEnv = (): boolean => {
   return !!(window as any).Capacitor;
 };
 
+// 定义Camera相关类型
+type CameraResultType = {
+  Uri: 'uri';
+  Base64: 'base64';
+  DataUrl: 'dataUrl';
+};
+
+type CameraSource = {
+  Camera: 'camera';
+  Photos: 'photos';
+  Prompt: 'prompt';
+};
+
+// 从Capacitor获取Camera类型常量
+const getCameraTypes = () => {
+  const Capacitor = (window as any).Capacitor;
+  if (!Capacitor?.Plugins?.Camera) {
+    // 提供默认值作为后备
+    return {
+      CameraResultType: { Uri: 'uri' } as CameraResultType,
+      CameraSource: { Camera: 'camera', Photos: 'photos' } as CameraSource
+    };
+  }
+  return {
+    CameraResultType: Capacitor.Plugins.CameraResultType,
+    CameraSource: Capacitor.Plugins.CameraSource
+  };
+};
+
 // 使用相机拍照
 export const takePhoto = async () => {
   if (!isCapacitorEnv()) return null;
   
   const { Camera } = (window as any).Capacitor.Plugins;
+  const { CameraResultType, CameraSource } = getCameraTypes();
   
   try {
     const image = await Camera.getPhoto({
@@ -29,6 +59,7 @@ export const pickImage = async () => {
   if (!isCapacitorEnv()) return null;
   
   const { Camera } = (window as any).Capacitor.Plugins;
+  const { CameraResultType, CameraSource } = getCameraTypes();
   
   try {
     const image = await Camera.getPhoto({
