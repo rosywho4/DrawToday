@@ -202,26 +202,34 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
           }
         }
       } else {
-        // 非强连接模式：从IndexedDB加载图片
-        const storedImages = await getImagesByFolderId(folder.id);
-        if (isMounted) {
-          if (storedImages.length > 0) {
-            // 从IndexedDB加载的图片，重新生成URL
-            const imagesWithURLs = storedImages.map(storedImg => ({
-              id: storedImg.id,
-              url: createPersistentURL(storedImg.file),
-              title: storedImg.file.name,
-              completed: folder.references.find(ref => ref.id === storedImg.id)?.completed || false,
-              isLocalFile: false,
-              file: storedImg.file
-            }));
-            setSessionImages(imagesWithURLs);
-          } else {
-            // 没有存储的图片，直接使用已有的引用（可能是临时URL）
-            setSessionImages(folder.references);
+          // 非强连接模式：合并IndexedDB图片和初始默认图片
+          const storedImages = await getImagesByFolderId(folder.id);
+          if (isMounted) {
+            if (storedImages.length > 0) {
+              // 从IndexedDB加载的图片，重新生成URL
+              const indexedDBImages = storedImages.map(storedImg => ({
+                id: storedImg.id,
+                url: createPersistentURL(storedImg.file),
+                title: storedImg.file.name,
+                completed: folder.references.find(ref => ref.id === storedImg.id)?.completed || false,
+                isLocalFile: false,
+                file: storedImg.file
+              }));
+              
+              // 获取初始默认图片（那些不在IndexedDB中的图片）
+              const defaultImages = folder.references.filter(ref => 
+                !storedImages.some(storedImg => storedImg.id === ref.id)
+              );
+              
+              // 合并两种图片，保持顺序：默认图片在前，IndexedDB图片在后
+              const mergedImages = [...defaultImages, ...indexedDBImages];
+              setSessionImages(mergedImages);
+            } else {
+              // 没有存储的图片，直接使用已有的引用（可能是临时URL）
+              setSessionImages(folder.references);
+            }
           }
         }
-      }
     };
     init();
     return () => { isMounted = false; };

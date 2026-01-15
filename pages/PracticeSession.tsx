@@ -351,54 +351,54 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ folder, session, onMa
 
       <div className={`absolute bottom-0 left-0 right-0 px-6 pb-14 pt-24 transition-all duration-500 bg-gradient-to-t from-black/90 to-transparent flex flex-col items-center z-[100] ${showUI ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12 pointer-events-none'}`}>
         
-        <div className="text-8xl font-thin tracking-[0.1em] text-white tabular-nums mb-12 drop-shadow-2xl opacity-90">
+        <div className="text-6xl font-thin tracking-[0.1em] text-white tabular-nums mb-8 drop-shadow-xl opacity-90">
           {formatTime(timeLeft)}
         </div>
 
-        <div className="w-full max-w-sm bg-black/40 backdrop-blur-[40px] rounded-[3rem] p-4 flex items-center justify-between gap-3 border border-white/10 shadow-2xl shadow-black/50">
-          <div className="flex items-center gap-2">
+        <div className="w-full max-w-xs bg-black/40 backdrop-blur-[40px] rounded-[3rem] p-2.5 flex items-center justify-between gap-1.5 border border-white/10 shadow-xl shadow-black/50">
+          <div className="flex items-center gap-0.5">
             <button 
               onClick={(e) => { e.stopPropagation(); setRotation(r => r + 90); }}
-              className="size-12 flex items-center justify-center rounded-full text-white/40 hover:text-white active:scale-90 transition-all bg-white/5"
+              className="size-9 flex items-center justify-center rounded-full text-white/40 hover:text-white active:scale-90 transition-all bg-white/5"
             >
-              <span className="material-symbols-outlined text-2xl">rotate_right</span>
+              <span className="material-symbols-outlined text-base">rotate_right</span>
             </button>
             <button 
               onClick={(e) => { e.stopPropagation(); setFlipped(f => !f); }}
-              className="size-12 flex items-center justify-center rounded-full text-white/40 hover:text-white active:scale-90 transition-all bg-white/5"
+              className="size-9 flex items-center justify-center rounded-full text-white/40 hover:text-white active:scale-90 transition-all bg-white/5"
             >
-              <span className="material-symbols-outlined text-2xl">flip</span>
+              <span className="material-symbols-outlined text-base">flip</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-3 bg-white/5 rounded-full p-2">
+          <div className="flex items-center gap-1.5 bg-white/5 rounded-full p-1">
             <button 
               onClick={(e) => { e.stopPropagation(); handlePrev(); }}
-              className="size-11 flex items-center justify-center rounded-full text-white/30 active:text-white active:scale-90"
+              className="size-8 flex items-center justify-center rounded-full text-white/30 active:text-white active:scale-90"
             >
-              <span className="material-symbols-outlined text-3xl">skip_previous</span>
+              <span className="material-symbols-outlined text-lg">skip_previous</span>
             </button>
             <button 
               onClick={(e) => { e.stopPropagation(); setIsPaused(!isPaused); }}
-              className="size-16 rounded-full bg-primary text-white flex items-center justify-center shadow-xl shadow-primary/40 active:scale-90 transition-transform"
+              className="size-13 rounded-full bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/40 active:scale-90 transition-transform"
             >
-              <span className="material-symbols-outlined text-5xl filled leading-none">
+              <span className="material-symbols-outlined text-3xl filled leading-none">
                 {isPaused ? 'play_arrow' : 'pause'}
               </span>
             </button>
             <button 
               onClick={(e) => { e.stopPropagation(); handleNext(); }}
-              className="size-11 flex items-center justify-center rounded-full text-white/30 active:text-white active:scale-90"
+              className="size-8 flex items-center justify-center rounded-full text-white/30 active:text-white active:scale-90"
             >
-              <span className="material-symbols-outlined text-3xl">skip_next</span>
+              <span className="material-symbols-outlined text-lg">skip_next</span>
             </button>
           </div>
 
           <button 
             onClick={(e) => { e.stopPropagation(); handleMarkCurrentComplete(); }}
-            className="size-14 flex items-center justify-center rounded-full text-secondary active:scale-90 transition-all"
+            className="size-11 flex items-center justify-center rounded-full text-secondary active:scale-90 transition-all"
           >
-            <span className="material-symbols-outlined text-[48px] filled">check_circle</span>
+            <span className="material-symbols-outlined text-2xl filled">check_circle</span>
           </button>
         </div>
       </div>
