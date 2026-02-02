@@ -18,6 +18,7 @@ export default function useHomePage() {
   const [isAdding, setIsAdding] = useState(false);
   const [isRenaming, setIsRenaming] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
+  const [showCoverSelector, setShowCoverSelector] = useState<string | null>(null);
 
   const longPressTimer = useRef<number | null>(null);
   const isLongPressActive = useRef(false);
@@ -90,6 +91,8 @@ export default function useHomePage() {
     confirmRename,
     handleCopyFolder: copyFolder,
     handleDeleteFolder: deleteFolder,
-    handleSetShowDeleteConfirm: setShowDeleteConfirm
+    handleSetShowDeleteConfirm: setShowDeleteConfirm,
+    showCoverSelector,
+    setShowCoverSelector
   };
 }

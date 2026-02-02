@@ -21,7 +21,26 @@ export function FoldersProvider({ children }: { children: ReactNode }) {
   const [folders, setFolders] = useState<Folder[]>(() => {
     if (typeof window === 'undefined') return MOCK_FOLDERS;
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : MOCK_FOLDERS;
+    if (!saved) return MOCK_FOLDERS;
+    
+    try {
+      const parsed = JSON.parse(saved);
+      // 确保 Date 对象被正确解析
+      return parsed.map((f: any) => ({
+        ...f,
+        createdAt: new Date(f.createdAt),
+        updatedAt: new Date(f.updatedAt),
+        lastOpened: new Date(f.lastOpened),
+        references: f.references.map((r: any) => ({
+          ...r,
+          addedAt: new Date(r.addedAt),
+          completedAt: r.completedAt ? new Date(r.completedAt) : undefined
+        }))
+      }));
+    } catch (e) {
+      console.error('Failed to load folders from localStorage:', e);
+      return MOCK_FOLDERS;
+    }
   });
 
   useEffect(() => {

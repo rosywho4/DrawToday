@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import Lightbox from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
-import { X, Check, Image as ImageIcon, Filter, Circle } from 'lucide-react';
+import { X, Check, Image as ImageIcon, Filter, Circle, Play, Plus } from 'lucide-react';
 import { useGalleryManager } from '../hooks/useGalleryManager';
 import { FilterType } from '../types/gallery';
 import Header from '../components/layout/Header';
@@ -353,13 +353,23 @@ export default function FolderDetailPage() {
 
       {/* 浮动操作按钮（浏览模式） */}
       {!gallery.selection.isSelectionMode && gallery.images.length > 0 && (
-        <div className="fixed bottom-28 right-6 flex flex-col items-center gap-5 z-40">
+        <div className="fixed bottom-28 right-6 flex flex-col items-center gap-4 z-40">
+          {/* 导入图片按钮 */}
+          <button
+            onClick={() => document.querySelector('input[type="file"]')?.click()}
+            className="size-16 rounded-full bg-white text-primary shadow-lg shadow-black/10 flex items-center justify-center active:scale-95 transition-transform border-2 border-primary/20 hover:border-primary/40"
+            title="导入图片"
+          >
+            <Plus className="w-8 h-8" />
+          </button>
+          
+          {/* 开始练习按钮 */}
           <button
             onClick={() => navigate(`/folder/${folderId}/practice`)}
             className="size-16 rounded-full bg-primary text-white shadow-xl shadow-primary/30 flex items-center justify-center active:scale-95 transition-transform"
             title="开始练习"
           >
-            <ImageIcon className="w-8 h-8" />
+            <Play className="w-8 h-8" />
           </button>
         </div>
       )}

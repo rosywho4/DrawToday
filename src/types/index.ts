@@ -20,6 +20,7 @@ export interface Folder {
   references: ImageReference[];
   lastOpened: Date;
   coverImage?: string;
+  coverId?: string; // 封面图片的ID，用于从IndexedDB加载
   imageCount?: number;
 }
 
