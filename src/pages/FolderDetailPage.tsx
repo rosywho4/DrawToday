@@ -356,7 +356,10 @@ export default function FolderDetailPage() {
         <div className="fixed bottom-28 right-6 flex flex-col items-center gap-4 z-40">
           {/* 导入图片按钮 */}
           <button
-            onClick={() => document.querySelector('input[type="file"]')?.click()}
+            onClick={() => {
+              const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+              input?.click();
+            }}
             className="size-16 rounded-full bg-white text-primary shadow-lg shadow-black/10 flex items-center justify-center active:scale-95 transition-transform border-2 border-primary/20 hover:border-primary/40"
             title="导入图片"
           >

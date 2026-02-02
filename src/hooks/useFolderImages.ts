@@ -41,10 +41,18 @@ export function useFolderImages(folderId: string, initialReferences: ImageRefere
             notes: undefined
           };
           
-          // 合并元数据，优先使用存储的元数据
+          // 先从 initialReferences 查找对应的引用（优先使用最新的状态）
+          const refFromContext = initialReferences.find(ref => ref.id === storedImg.id);
+          
+          // 合并：Context 状态 > IndexedDB 元数据 > 默认值
           return {
             ...defaultValues,
-            ...metadata
+            ...metadata,
+            ...(refFromContext ? {
+              isCompleted: refFromContext.isCompleted,
+              completed: refFromContext.completed,
+              completedAt: refFromContext.completedAt
+            } : {})
           };
         });
         

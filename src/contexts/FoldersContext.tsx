@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Folder, ImageReference } from '../types';
 import { MOCK_FOLDERS } from '../data/mockData';
+import { updateImageMetadata } from '../utils/indexedDB';
 
 interface FoldersContextType {
   folders: Folder[];
@@ -90,12 +91,22 @@ export function FoldersProvider({ children }: { children: ReactNode }) {
   };
 
   const markImageComplete = (folderId: string, imageId: string) => {
+    // 同步更新 IndexedDB 元数据
+    updateImageMetadata(imageId, { 
+      isCompleted: true, 
+      completed: true,
+      completedAt: new Date()
+    }).catch(err => {
+      console.error('Failed to update image metadata:', err);
+    });
+    
+    // 更新 FoldersContext 状态
     setFolders(prev => prev.map(f => {
       if (f.id === folderId) {
         return {
           ...f,
           references: f.references.map(img =>
-            img.id === imageId ? { ...img, isCompleted: true, completed: true } : img
+            img.id === imageId ? { ...img, isCompleted: true, completed: true, completedAt: new Date() } : img
           ),
           completedCount: f.completedCount + 1
         };

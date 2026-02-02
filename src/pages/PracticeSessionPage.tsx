@@ -13,7 +13,10 @@ export default function PracticeSessionPage() {
   const { activeSession, setActiveSession } = useSession();
 
   const folder = folders.find(f => f.id === folderId);
-  const { images, isLoading } = useFolderImages(folderId || '', folder?.references || []);
+  const { images: allImages, isLoading } = useFolderImages(folderId || '', folder?.references || []);
+  
+  // 只使用未完成的图片
+  const images = allImages.filter(img => !img.isCompleted && !img.completed);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(activeSession?.timePerImage || 60);
@@ -40,10 +43,22 @@ export default function PracticeSessionPage() {
 
     if (!isLoading && !isPaused && timeLeft > 0) {
       timerRef.current = window.setInterval(() => {
-        setTimeLeft(prev => prev - 1);
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            // 倒计时结束，标记为已完成
+            const currentImgId = images[currentIndex]?.id;
+            if (currentImgId && folderId) {
+              markImageComplete(folderId, currentImgId);
+            }
+            // 返回0以触发下一次检查
+            return 0;
+          }
+          return prev - 1;
+        });
       }, 1000);
     } else if (!isLoading && timeLeft === 0) {
-      handleMarkCurrentComplete();
+      // 倒计时已结束，跳转到下一张
+      handleNext();
     }
 
     return () => {
@@ -59,8 +74,8 @@ export default function PracticeSessionPage() {
 
   const handleMarkCurrentComplete = () => {
     const currentImgId = images[currentIndex]?.id;
-    if (currentImgId) {
-      markImageComplete(folderId || '', currentImgId);
+    if (currentImgId && folderId) {
+      markImageComplete(folderId, currentImgId);
     }
     handleNext();
   };
@@ -71,6 +86,7 @@ export default function PracticeSessionPage() {
       setTimeLeft(activeSession?.timePerImage || 60);
       fullReset();
     } else {
+      // 练习结束
       setActiveSession(null);
       navigate('/statistics');
     }
@@ -102,6 +118,21 @@ export default function PracticeSessionPage() {
   const currentImage = images[currentIndex];
   if (!currentImage) return null;
 
+  // 计算旋转后的适配尺寸
+  // 当旋转90度或270度时，需要交换宽高比的适配方式
+  const isRotated90or270 = rotation % 180 !== 0;
+  const imageStyle = isRotated90or270 
+    ? { 
+        maxWidth: '100vh', 
+        maxHeight: '100vw',
+        transform: `rotate(${rotation}deg) scaleX(${flipped ? -1 : 1})`
+      }
+    : { 
+        maxWidth: '100%', 
+        maxHeight: '100%',
+        transform: `rotate(${rotation}deg) scaleX(${flipped ? -1 : 1})`
+      };
+
   return (
     <div
       className="fixed inset-0 w-full h-full bg-black flex items-center justify-center overflow-hidden touch-none"
@@ -117,8 +148,8 @@ export default function PracticeSessionPage() {
         <img
           src={currentImage.url}
           alt="Reference"
-          className="max-w-full max-h-full object-contain select-none pointer-events-none transition-transform duration-300 ease-out"
-          style={{ transform: `rotate(${rotation}deg) scaleX(${flipped ? -1 : 1})` }}
+          className="object-contain select-none pointer-events-none transition-transform duration-300 ease-out"
+          style={imageStyle}
         />
       </div>
 
