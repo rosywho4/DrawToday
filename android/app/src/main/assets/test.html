@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DrawToday</title>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 20px; 
+            font-family: sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        .loading { text-align: center; }
+        .spinner {
+            border: 4px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <h1>DrawToday</h1>
+        <div class="spinner"></div>
+        <p>应用加载中...</p>
+        <p>如果长时间未响应，请检查网络连接</p>
+    </div>
+    
+    <script>
+        // 3秒后显示主应用
+        setTimeout(function() {
+            // 模拟加载状态
+            document.body.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <h1>DrawToday - 绘画练习助手</h1>
+                    <p>欢迎使用DrawToday！</p>
+                    <p>您的绘画练习工具已准备就绪</p>
+                </div>
+            `;
+        }, 3000);
+    </script>
+</body>
+</html>
