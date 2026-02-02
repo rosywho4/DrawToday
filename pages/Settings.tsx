@@ -2,7 +2,19 @@
 import React from 'react';
 
 const Settings: React.FC = () => {
-  const sections = [
+  interface SettingItem {
+    label: string;
+    icon: string;
+    extra?: string;
+    toggle?: boolean;
+  }
+
+  interface SettingSection {
+    title: string;
+    items: SettingItem[];
+  }
+
+  const sections: SettingSection[] = [
     {
       title: '账户设置',
       items: [

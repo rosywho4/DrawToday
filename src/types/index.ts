@@ -1,10 +1,9 @@
-
 export interface ImageReference {
   id: string;
-  url: string;
+  uri: string;
+  localUri?: string;
   completed: boolean;
   title?: string;
-  isLocalFile?: boolean; // 标记是否为本地文件系统资源
 }
 
 export interface Folder {
@@ -15,6 +14,7 @@ export interface Folder {
   coverImage: string;
   coverImageId?: string;
   references: ImageReference[];
+  mediaIds?: string[];
 }
 
 export interface PracticePreset {
@@ -27,7 +27,7 @@ export interface PracticePreset {
 export interface PracticeSession {
   folderId: string;
   imageCount: number;
-  timePerImage: number; // in seconds
+  timePerImage: number;
   mode: 'random' | 'sequential';
 }
 
@@ -39,12 +39,17 @@ export interface PracticeStats {
   weeklyTrend: { day: string; minutes: number }[];
 }
 
-export enum Page {
-  HOME = 'HOME',
-  PRACTICE = 'PRACTICE',
-  STATS = 'STATS',
-  SETTINGS = 'SETTINGS',
-  FOLDER_DETAIL = 'FOLDER_DETAIL',
-  PRACTICE_CONFIG = 'PRACTICE_CONFIG',
-  PRACTICE_SESSION = 'PRACTICE_SESSION'
-}
+export type RootStackParamList = {
+  Home: undefined;
+  FolderDetail: { folder: Folder };
+  PracticeConfig: { folder: Folder };
+  PracticeSession: { session: PracticeSession };
+  Statistics: undefined;
+  Settings: undefined;
+};
+
+export type TabParamList = {
+  HomeTab: undefined;
+  StatsTab: undefined;
+  SettingsTab: undefined;
+};

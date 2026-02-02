@@ -2,11 +2,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Folder, Page, ImageReference } from '../types';
 
-// IndexedDB 配置，用于持久化存储 FileSystemDirectoryHandle 和图片
+// IndexedDB 配置，用于持久化存储图片
 const DB_NAME = 'SketchSerenityDB';
-const STORE_NAME = 'FolderHandles';
 const IMAGES_STORE_NAME = 'Images';
-const DB_VERSION = 3; // 升级版本，添加图片存储
+const DB_VERSION = 3;
 
 interface StoredImage {
   id: string;
@@ -19,34 +18,13 @@ function openDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (e: any) => {
       const db = e.target.result;
-      // 创建文件夹句柄存储
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-      // 创建图片存储
       if (!db.objectStoreNames.contains(IMAGES_STORE_NAME)) {
         const imagesStore = db.createObjectStore(IMAGES_STORE_NAME, { keyPath: 'id' });
-        // 创建文件夹ID索引，方便按文件夹查询图片
         imagesStore.createIndex('folderId', 'folderId', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
-  });
-}
-
-async function saveHandle(folderId: string, handle: FileSystemDirectoryHandle) {
-  const db = await openDB();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  await tx.objectStore(STORE_NAME).put(handle, folderId);
-}
-
-async function getHandle(folderId: string): Promise<FileSystemDirectoryHandle | null> {
-  const db = await openDB();
-  return new Promise((resolve) => {
-    const request = db.transaction(STORE_NAME).objectStore(STORE_NAME).get(folderId);
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => resolve(null);
   });
 }
 
@@ -89,8 +67,6 @@ async function deleteImageFromDB(imageId: string) {
 
 // 生成持久化URL
 function createPersistentURL(file: File): string {
-  // 使用Blob URL，在应用会话期间有效
-  // 我们将通过IndexedDB持久化实际文件，以便在刷新后重新生成URL
   return URL.createObjectURL(file);
 }
 
@@ -112,9 +88,9 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [toast, setToast] = useState<string | null>(null);
-  const [showSetCoverMenu, setShowSetCoverMenu] = useState<string | null>(null); // 存储要设为封面的图片ID
+  const [showSetCoverMenu, setShowSetCoverMenu] = useState<string | null>(null);
+  const [pendingImportCount, setPendingImportCount] = useState(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<number | null>(null);
@@ -128,112 +104,43 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     setTimeout(() => setToast(null), 3000);
   };
 
-  // 核心功能：同步本地文件夹并生成预览 URL
-  const syncLocalFolder = useCallback(async (handle: FileSystemDirectoryHandle, silent = false) => {
-    if (isSyncing) return;
-    setIsSyncing(true);
-    
-    const newSessionImages: SessionImage[] = [];
-    const supportedExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-    
-    try {
-      // @ts-ignore
-      for await (const entry of handle.values()) {
-        if (entry.kind === 'file') {
-          const file = await (entry as any).getFile();
-          if (supportedExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
-            const url = URL.createObjectURL(file);
-            // 匹配已有的完成状态
-            const existingRef = folder.references.find(r => r.title === entry.name);
-            newSessionImages.push({
-              id: `fs-${entry.name}-${file.size}`,
-              url: url,
-              title: entry.name,
-              completed: existingRef?.completed || false,
-              isLocalFile: true,
-              file: file
-            });
-          }
-        }
-      }
-
-      // 更新全局状态，持久化 meta 信息（但不持久化 URL，因为 URL 会失效）
-      const updatedRefs: ImageReference[] = newSessionImages.map(({file, ...rest}) => ({...rest}));
-      
-      // 如果是第一次导入图片，将第一张图片设为封面
-      const newCoverImage = updatedRefs.length > 0 && folder.references.length === 0 ? updatedRefs[0].url : folder.coverImage;
-      
-      onUpdateFolder({
-        ...folder,
-        references: updatedRefs,
-        coverImage: newCoverImage,
-        linkedPath: handle.name,
-      });
-
-      setSessionImages(newSessionImages);
-      setPermissionState('granted');
-      if (!silent) showToast(`成功读取 ${newSessionImages.length} 张本地原图`);
-    } catch (err) {
-      console.error(err);
-      setPermissionState('denied');
-      if (!silent) showToast("读取失败，请检查文件夹访问权限");
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [folder, onUpdateFolder, isSyncing]);
-
-  // 初始化：从IndexedDB加载图片并恢复强连接
+  // 初始化：从IndexedDB加载图片
   useEffect(() => {
     let isMounted = true;
     const init = async () => {
-      if (folder.linkedPath) {
-        const handle = await getHandle(folder.id);
-        if (handle) {
-          try {
-            // @ts-ignore
-            const permission = await handle.queryPermission({ mode: 'readwrite' });
-            if (permission === 'granted') {
-              if (isMounted) syncLocalFolder(handle, true);
-            } else {
-              if (isMounted) setPermissionState('prompt');
-            }
-          } catch (e) {
-            if (isMounted) setPermissionState('denied');
-          }
+      // 如果有待处理的导入操作，跳过这次加载
+      if (pendingImportCount > 0) {
+        console.log('Skipping load due to pending import');
+        return;
+      }
+      
+      const storedImages = await getImagesByFolderId(folder.id);
+      if (isMounted) {
+        if (storedImages.length > 0) {
+          const indexedDBImages = storedImages.map(storedImg => ({
+            id: storedImg.id,
+            url: createPersistentURL(storedImg.file),
+            title: storedImg.file.name,
+            completed: folder.references.find(ref => ref.id === storedImg.id)?.completed || false,
+            isLocalFile: false,
+            file: storedImg.file
+          }));
+          
+          const defaultImages = folder.references.filter(ref => 
+            !storedImages.some(storedImg => storedImg.id === ref.id)
+          );
+          
+          const mergedImages = [...defaultImages, ...indexedDBImages];
+          console.log(`Loaded ${mergedImages.length} images from DB`);
+          setSessionImages(mergedImages);
+        } else {
+          setSessionImages(folder.references);
         }
-      } else {
-          // 非强连接模式：合并IndexedDB图片和初始默认图片
-          const storedImages = await getImagesByFolderId(folder.id);
-          if (isMounted) {
-            if (storedImages.length > 0) {
-              // 从IndexedDB加载的图片，重新生成URL
-              const indexedDBImages = storedImages.map(storedImg => ({
-                id: storedImg.id,
-                url: createPersistentURL(storedImg.file),
-                title: storedImg.file.name,
-                completed: folder.references.find(ref => ref.id === storedImg.id)?.completed || false,
-                isLocalFile: false,
-                file: storedImg.file
-              }));
-              
-              // 获取初始默认图片（那些不在IndexedDB中的图片）
-              const defaultImages = folder.references.filter(ref => 
-                !storedImages.some(storedImg => storedImg.id === ref.id)
-              );
-              
-              // 合并两种图片，保持顺序：默认图片在前，IndexedDB图片在后
-              const mergedImages = [...defaultImages, ...indexedDBImages];
-              setSessionImages(mergedImages);
-            } else {
-              // 没有存储的图片，直接使用已有的引用（可能是临时URL）
-              setSessionImages(folder.references);
-            }
-          }
-        }
+      }
     };
     init();
     return () => { isMounted = false; };
-  }, [folder.id, folder.linkedPath, folder.references]);
+  }, [folder.id, folder.references, pendingImportCount]);
 
   // 组件卸载时释放所有Blob URL
   useEffect(() => {
@@ -246,61 +153,29 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
     };
   }, [sessionImages]);
 
-  // 处理点击导入/强连接
-  const handleRequestStrongConnection = async () => {
-    // 检测设备类型
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    
-    if (isMobile || !('showDirectoryPicker' in window)) {
-      // 移动端或不支持showDirectoryPicker API的浏览器，直接使用手动导入
-      showToast("已切换至批量导入模式");
-      fileInputRef.current?.click();
-      return;
-    }
-    try {
-      // @ts-ignore
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      await saveHandle(folder.id, handle);
-      await syncLocalFolder(handle);
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        showToast("无法访问文件夹，已切换至批量导入模式");
-        fileInputRef.current?.click();
-      }
-    }
-  };
-
-  // 恢复现有强连接的权限
-  const handleRestorePermission = async () => {
-    const handle = await getHandle(folder.id);
-    if (handle) {
-      try {
-        // @ts-ignore
-        const permission = await handle.requestPermission({ mode: 'readwrite' });
-        if (permission === 'granted') syncLocalFolder(handle);
-      } catch (e) {
-        showToast("授权失败");
-      }
-    }
-  };
-
-  // 手动批量导入（兼容移动端，支持持久化存储）
+  // 手动导入图片（支持单张或批量导入）
   const handleManualImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) {
+      console.log('No files selected');
+      return;
+    }
+    
+    console.log(`Selected ${files.length} files`);
     setIsSyncing(true);
+    setPendingImportCount(files.length);
     
     const newRefs: SessionImage[] = [];
     const storedImages: StoredImage[] = [];
+    const timestamp = Date.now();
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const id = `m-${Date.now()}-${i}`;
+      const uniqueId = `m-${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`;
       const url = createPersistentURL(file);
       
-      // 创建图片引用
       newRefs.push({
-        id: id,
+        id: uniqueId,
         url: url,
         title: file.name,
         completed: false,
@@ -308,23 +183,23 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
         file: file
       });
       
-      // 准备存储到IndexedDB
       storedImages.push({
-        id: id,
+        id: uniqueId,
         file: file,
         folderId: folder.id
       });
     }
 
-    // 存储图片到IndexedDB
+    console.log(`Processing ${newRefs.length} images`);
+    
     for (const storedImg of storedImages) {
       await saveImageToDB(storedImg);
+      console.log(`Saved to DB: ${storedImg.id}`);
     }
 
-    // 更新文件夹引用
     const updatedRefs = [...folder.references, ...newRefs.map(({file, ...rest}) => ({...rest}))];
+    console.log(`Updated refs count: ${updatedRefs.length}`);
     
-    // 如果是第一次导入图片，将第一张图片设为封面
     const newCoverImage = folder.references.length === 0 && newRefs.length > 0 ? newRefs[0].url : folder.coverImage;
     
     onUpdateFolder({
@@ -333,10 +208,11 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
       coverImage: newCoverImage
     });
     
-    // 更新会话图片
+    // 直接更新sessionImages，不等待下一次useEffect
     setSessionImages(prev => [...prev, ...newRefs]);
     
     setIsSyncing(false);
+    setPendingImportCount(0);
     showToast(`成功导入 ${newRefs.length} 张素材`);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -424,7 +300,7 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
 
   return (
     <div className="flex flex-col min-h-screen select-none">
-      <input type="file" ref={fileInputRef} multiple accept="image/*" className="hidden" onChange={handleManualImport} />
+      <input type="file" ref={fileInputRef} multiple accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handleManualImport} />
 
       {/* 设置封面菜单 */}
       {showSetCoverMenu && (
@@ -477,23 +353,10 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
           </button>
           <div className="min-w-0">
             <h1 className="text-xl font-black truncate">{isSelectionMode ? `已选 ${selectedIds.size} 项` : folder.name}</h1>
-            {folder.linkedPath && !isSelectionMode && (
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="material-symbols-outlined text-[10px] text-primary filled">link</span>
-                <p className="text-[10px] font-black text-primary uppercase tracking-wider truncate max-w-[120px]">强连接：{folder.linkedPath}</p>
-              </div>
-            )}
           </div>
         </div>
         
         <div className="flex items-center gap-3">
-          {folder.linkedPath && !isSelectionMode && (
-             <button onClick={() => {
-                getHandle(folder.id).then(h => h && syncLocalFolder(h));
-             }} className={`material-symbols-outlined text-primary ${isSyncing ? 'animate-spin' : ''}`}>
-               sync
-             </button>
-          )}
           {!isSelectionMode && (
             <>
               <button onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')} className="material-symbols-outlined text-slate-400">
@@ -512,17 +375,6 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
         </div>
       </header>
 
-      {/* 强连接权限恢复提示 */}
-      {folder.linkedPath && permissionState === 'prompt' && (
-        <div className="bg-primary/10 px-6 py-4 flex items-center justify-between border-b border-primary/5 animate-in slide-in-from-top duration-300">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-primary">security</span>
-            <span className="text-xs font-black text-primary">需要授权以直接读取本地原图</span>
-          </div>
-          <button onClick={handleRestorePermission} className="bg-primary text-white text-[11px] px-5 py-2.5 rounded-full font-black uppercase tracking-wider shadow-lg shadow-primary/20 active:scale-95 transition-transform">重新授权</button>
-        </div>
-      )}
-
       {toast && <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[120] bg-black/80 text-white px-5 py-2.5 rounded-full text-xs font-black animate-in fade-in slide-in-from-top-2 text-center shadow-2xl">{toast}</div>}
 
       <main className="flex-1 p-4 pb-40">
@@ -537,14 +389,10 @@ const FolderDetail: React.FC<FolderDetailProps> = ({ folder, onNavigate, onUpdat
               <span className="material-symbols-outlined text-5xl">folder_zip</span>
             </div>
             <p className="text-slate-400 text-sm font-black mb-10">此图库尚无素材</p>
-            <div className="flex flex-col gap-4 w-64">
-              <button onClick={handleRequestStrongConnection} className="bg-primary text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-primary/20 flex items-center justify-center gap-2">
-                <span className="material-symbols-outlined text-lg">folder_open</span> 强连接本地目录
-              </button>
-              <button onClick={() => fileInputRef.current?.click()} className="bg-white text-slate-400 py-4 rounded-2xl font-black text-sm border border-black/5 flex items-center justify-center gap-2">
-                <span className="material-symbols-outlined text-lg">add_photo_alternate</span> 批量导入图片
-              </button>
-            </div>
+            <button onClick={() => fileInputRef.current?.click()} className="bg-primary text-white py-4 px-8 rounded-2xl font-black text-sm shadow-xl shadow-primary/20 flex items-center justify-center gap-2 active:scale-95 transition-transform">
+              <span className="material-symbols-outlined text-lg">add_photo_alternate</span>
+              导入图片
+            </button>
           </div>
         ) : (
           <div className={viewMode === 'grid' ? "grid grid-cols-3 gap-3" : "space-y-3"}>
