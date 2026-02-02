@@ -1,9 +1,92 @@
-import React from 'react';
-import { INITIAL_STATS } from '../data/mockData';
+import React, { useMemo } from 'react';
+import { useSession } from '../contexts/SessionContext';
 import Header from '../components/layout/Header';
 
 export default function StatisticsPage() {
-  const stats = INITIAL_STATS;
+  const { practiceHistory, clearPracticeHistory } = useSession();
+
+  // 计算统计数据
+  const stats = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    // 计算连续练习天数
+    let streak = 0;
+    let checkDate = new Date(today);
+    const practiceDates = new Set(
+      practiceHistory.map(h => {
+        const d = new Date(h.date);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      })
+    );
+    
+    while (practiceDates.has(checkDate.getTime())) {
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+    
+    // 总时长和总作品数
+    const totalMinutes = practiceHistory.reduce((sum, h) => sum + h.duration, 0);
+    const totalHours = Math.floor(totalMinutes / 60);
+    const remainingMinutes = totalMinutes % 60;
+    const totalWorks = practiceHistory.reduce((sum, h) => sum + h.imageCount, 0);
+    
+    // 本周趋势（最近7天）
+    const weeklyTrend = [];
+    const days = ['日', '一', '二', '三', '四', '五', '六'];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateTime = date.getTime();
+      const dayMinutes = practiceHistory
+        .filter(h => {
+          const hDate = new Date(h.date);
+          const hDateTime = new Date(hDate.getFullYear(), hDate.getMonth(), hDate.getDate()).getTime();
+          return hDateTime === dateTime;
+        })
+        .reduce((sum, h) => sum + h.duration, 0);
+      
+      weeklyTrend.push({
+        day: days[date.getDay()],
+        minutes: dayMinutes
+      });
+    }
+    
+    return {
+      streak,
+      totalHours,
+      totalMinutes: remainingMinutes,
+      totalWorks,
+      weeklyTrend
+    };
+  }, [practiceHistory]);
+  
+  // 格式化日期显示
+  const formatDate = (date: Date) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const targetDate = new Date(date);
+    const targetDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    
+    if (targetDay.getTime() === today.getTime()) return '今天';
+    if (targetDay.getTime() === yesterday.getTime()) return '昨天';
+    
+    return `${targetDate.getMonth() + 1}月${targetDate.getDate()}日`;
+  };
+  
+  // 格式化时长
+  const formatDuration = (minutes: number) => {
+    if (minutes < 60) return `${minutes}分钟`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}小时 ${mins}分钟` : `${hours}小时`;
+  };
+  
+  // 最近3条记录
+  const recentHistory = practiceHistory.slice(0, 3);
 
   return (
     <div className="flex flex-col min-h-screen bg-bg-serenity pb-32">
@@ -78,28 +161,44 @@ export default function StatisticsPage() {
         <div>
           <div className="flex justify-between items-center mb-4 px-2">
             <h3 className="text-lg font-black">最近记录</h3>
-            <button className="text-primary text-sm font-bold">查看全部</button>
+            {practiceHistory.length > 0 && (
+              <button 
+                onClick={clearPracticeHistory}
+                className="text-rose-500 text-sm font-bold active:scale-95 transition-transform"
+              >
+                清空记录
+              </button>
+            )}
           </div>
-          <div className="space-y-3">
-            {[
-              { date: '今天', count: 8, time: '45分钟', img: 'https://picsum.photos/seed/eye/100/100' },
-              { date: '昨天', count: 12, time: '1小时 10分', img: 'https://picsum.photos/seed/face/100/100' },
-              { date: '10月24日', count: 5, time: '30分钟', img: 'https://picsum.photos/seed/hand/100/100' }
-            ].map((item, i) => (
-              <div key={i} className="bg-white p-4 rounded-3xl border border-black/5 flex items-center justify-between active:scale-[0.98] transition-transform">
-                <div className="flex items-center gap-4">
-                  <div className="size-14 rounded-2xl bg-slate-50 overflow-hidden border border-slate-100">
-                    <img src={item.img} alt="History" className="w-full h-full object-cover" />
-                  </div>
-                  <div>
-                    <p className="font-black text-text-main">{item.date}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.time} • {item.count}张作品</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-slate-200">chevron_right</span>
+          {recentHistory.length === 0 ? (
+            <div className="bg-white p-12 rounded-3xl border border-black/5 text-center">
+              <div className="size-20 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                <span className="material-symbols-outlined text-4xl text-slate-300">history</span>
               </div>
-            ))}
-          </div>
+              <p className="text-slate-400 font-bold">暂无练习记录</p>
+              <p className="text-sm text-slate-300 mt-2">完成练习后会在这里显示</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {recentHistory.map((item) => (
+                <div key={item.id} className="bg-white p-4 rounded-3xl border border-black/5 flex items-center justify-between active:scale-[0.98] transition-transform">
+                  <div className="flex items-center gap-4">
+                    <div className="size-14 rounded-2xl bg-gradient-to-br from-primary to-[#2193b0] flex items-center justify-center">
+                      <span className="material-symbols-outlined text-white text-2xl">brush</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-text-main">{formatDate(item.date)}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        {formatDuration(item.duration)} • {item.imageCount}张作品
+                      </p>
+                      <p className="text-[10px] text-slate-300 mt-0.5">{item.folderName}</p>
+                    </div>
+                  </div>
+                  <span className="material-symbols-outlined text-slate-200">chevron_right</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>

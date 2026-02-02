@@ -10,7 +10,7 @@ export default function PracticeSessionPage() {
   const { folderId } = useParams();
   const navigate = useNavigate();
   const { folders, markImageComplete } = useFolders();
-  const { activeSession, setActiveSession } = useSession();
+  const { activeSession, setActiveSession, addPracticeHistory } = useSession();
 
   const folder = folders.find(f => f.id === folderId);
   const { images: allImages, isLoading } = useFolderImages(folderId || '', folder?.references || []);
@@ -21,6 +21,8 @@ export default function PracticeSessionPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(activeSession?.timePerImage || 60);
   const [isPaused, setIsPaused] = useState(false);
+  const [completedIds, setCompletedIds] = useState<string[]>([]);
+  const [startTime] = useState(new Date());
 
   const timerRef = useRef<number | null>(null);
   const {
@@ -49,6 +51,7 @@ export default function PracticeSessionPage() {
             const currentImgId = images[currentIndex]?.id;
             if (currentImgId && folderId) {
               markImageComplete(folderId, currentImgId);
+              setCompletedIds(prev => [...prev, currentImgId]);
             }
             // 返回0以触发下一次检查
             return 0;
@@ -76,6 +79,7 @@ export default function PracticeSessionPage() {
     const currentImgId = images[currentIndex]?.id;
     if (currentImgId && folderId) {
       markImageComplete(folderId, currentImgId);
+      setCompletedIds(prev => [...prev, currentImgId]);
     }
     handleNext();
   };
@@ -86,7 +90,22 @@ export default function PracticeSessionPage() {
       setTimeLeft(activeSession?.timePerImage || 60);
       fullReset();
     } else {
-      // 练习结束
+      // 练习结束，保存历史记录
+      const endTime = new Date();
+      const durationMinutes = Math.ceil((endTime.getTime() - startTime.getTime()) / 60000);
+      
+      if (folder && completedIds.length > 0) {
+        addPracticeHistory({
+          id: Date.now().toString(),
+          folderId: folder.id,
+          folderName: folder.name,
+          date: endTime,
+          duration: durationMinutes,
+          imageCount: completedIds.length,
+          completedImageIds: completedIds
+        });
+      }
+      
       setActiveSession(null);
       navigate('/statistics');
     }
