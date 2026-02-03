@@ -60,7 +60,12 @@
 
 ## 📦 快速开始
 
-### 前提条件
+### 无需部署即可使用
+
+目前支持：android、web
+参见release，内有安卓安装包apk文件与vercel托管网页https://draw-today.vercel.app/
+
+### 自行部署前提条件
 - Node.js 18+ 
 - npm 或 yarn
 
