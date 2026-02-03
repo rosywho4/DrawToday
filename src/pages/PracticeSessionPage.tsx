@@ -107,7 +107,7 @@ export default function PracticeSessionPage() {
       }
       
       setActiveSession(null);
-      navigate('/statistics');
+      navigate('/');
     }
   };
 
