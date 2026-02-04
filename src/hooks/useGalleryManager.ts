@@ -137,7 +137,7 @@ export function useGalleryManager(folderId: string) {
       // 更新Context中的folder.references
       updateFolder({
         ...folder,
-        references: newReferences,
+        references: [...folder.references, ...newReferences],
         coverImage: folder.coverImage || (newReferences.length > 0 ? newReferences[0].url : '')
       });
       

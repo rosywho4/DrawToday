@@ -55,6 +55,7 @@ export interface PracticeSession {
   timePerImage?: number; // 每张图片时间（秒）
   imageCount?: number; // 图片数量
   mode?: "random" | "sequential"; // 练习模式
+  imageIds?: string[]; // 固定的图片列表（按练习顺序）
 }
 
 export interface PracticePreset {

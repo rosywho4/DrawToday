@@ -36,6 +36,18 @@ export default function PracticeConfigPage() {
 
   const handleStart = () => {
     if (maxCount === 0 || !folder) return;
+    
+    // 根据模式生成图片列表
+    let selectedImages = [...availableImages];
+    
+    if (mode === 'random') {
+      // 随机打乱
+      selectedImages = selectedImages.sort(() => Math.random() - 0.5);
+    }
+    
+    // 限制数量
+    selectedImages = selectedImages.slice(0, imageCount);
+    
     const session = {
       id: Date.now().toString(),
       folderId: folder.id,
@@ -45,7 +57,8 @@ export default function PracticeConfigPage() {
       skippedImageIds: [],
       imageCount,
       timePerImage: Math.max(5, totalSec),
-      mode
+      mode,
+      imageIds: selectedImages.map(img => img.id)
     };
     setActiveSession(session);
     navigate(`/folder/${folderId}/session`);

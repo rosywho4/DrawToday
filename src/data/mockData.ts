@@ -3,7 +3,7 @@ import { Folder, PracticeStats, Page, ImageReference } from '../types';
 export const MOCK_FOLDERS: Folder[] = [
   {
     id: '1',
-    name: '解剖学 - 手部',
+    name: '初始相册',
     createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
     updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
     imageIds: Array.from({ length: 48 }, (_, i) => `h-${i}`),

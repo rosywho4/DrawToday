@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useFolders } from '../contexts/FoldersContext';
 import { useSession } from '../contexts/SessionContext';
@@ -15,8 +15,13 @@ export default function PracticeSessionPage() {
   const folder = folders.find(f => f.id === folderId);
   const { images: allImages, isLoading } = useFolderImages(folderId || '', folder?.references || []);
   
-  // 只使用未完成的图片
-  const images = allImages.filter(img => !img.isCompleted && !img.completed);
+  // 使用 session 中的固定图片列表，按顺序加载
+  const images = useMemo(() => {
+    if (!activeSession?.imageIds) return [];
+    return activeSession.imageIds
+      .map(id => allImages.find(img => img.id === id))
+      .filter((img): img is NonNullable<typeof img> => img !== undefined);
+  }, [activeSession?.imageIds, allImages]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(activeSession?.timePerImage || 60);
@@ -84,30 +89,36 @@ export default function PracticeSessionPage() {
     handleNext();
   };
 
+  // 统一的退出函数，保存练习记录
+  const handleExit = useCallback((navigateToPath: string = '/') => {
+    const endTime = new Date();
+    const durationMinutes = Math.ceil((endTime.getTime() - startTime.getTime()) / 60000);
+    
+    // 如果有已完成的图片，保存练习记录
+    if (folder && completedIds.length > 0 && durationMinutes > 0) {
+      addPracticeHistory({
+        id: Date.now().toString(),
+        folderId: folder.id,
+        folderName: folder.name,
+        date: endTime,
+        duration: durationMinutes,
+        imageCount: completedIds.length,
+        completedImageIds: completedIds
+      });
+    }
+    
+    setActiveSession(null);
+    navigate(navigateToPath);
+  }, [folder, completedIds, startTime, addPracticeHistory, setActiveSession, navigate]);
+
   const handleNext = () => {
     if (currentIndex < images.length - 1) {
       setCurrentIndex(prev => prev + 1);
       setTimeLeft(activeSession?.timePerImage || 60);
       fullReset();
     } else {
-      // 练习结束，保存历史记录
-      const endTime = new Date();
-      const durationMinutes = Math.ceil((endTime.getTime() - startTime.getTime()) / 60000);
-      
-      if (folder && completedIds.length > 0) {
-        addPracticeHistory({
-          id: Date.now().toString(),
-          folderId: folder.id,
-          folderName: folder.name,
-          date: endTime,
-          duration: durationMinutes,
-          imageCount: completedIds.length,
-          completedImageIds: completedIds
-        });
-      }
-      
-      setActiveSession(null);
-      navigate('/');
+      // 练习结束，使用统一的退出函数
+      handleExit('/');
     }
   };
 
@@ -118,6 +129,29 @@ export default function PracticeSessionPage() {
       fullReset();
     }
   };
+
+  // 组件卸载时保存练习记录（处理意外关闭的情况）
+  useEffect(() => {
+    return () => {
+      // 只在有 activeSession 且有完成的图片时保存
+      if (activeSession && completedIds.length > 0 && folder) {
+        const endTime = new Date();
+        const durationMinutes = Math.ceil((endTime.getTime() - startTime.getTime()) / 60000);
+        
+        if (durationMinutes > 0) {
+          addPracticeHistory({
+            id: Date.now().toString(),
+            folderId: folder.id,
+            folderName: folder.name,
+            date: endTime,
+            duration: durationMinutes,
+            imageCount: completedIds.length,
+            completedImageIds: completedIds
+          });
+        }
+      }
+    };
+  }, []); // 空依赖数组，只在卸载时执行
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -180,7 +214,7 @@ export default function PracticeSessionPage() {
       </div>
 
       <header className={`absolute top-0 left-0 right-0 p-6 pt-14 flex items-center justify-between z-[100] transition-all duration-500 bg-gradient-to-b from-black/80 to-transparent ${showUI ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-12 pointer-events-none'}`}>
-        <button onClick={() => { setActiveSession(null); navigate(`/folder/${folderId}`); }} className="size-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-md text-white active:scale-90 transition-transform">
+        <button onClick={() => handleExit(`/folder/${folderId}`)} className="size-11 flex items-center justify-center rounded-full bg-white/10 backdrop-blur-md text-white active:scale-90 transition-transform">
           <span className="material-symbols-outlined">close</span>
         </button>
         <div className="text-center">

@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ImageReference } from '../types';
-import { getImagesByFolderId, saveImageToDB, deleteImageFromDB, createPersistentURL, updateImageMetadata } from '../utils/indexedDB';
+import { 
+  getImagesByFolderId, 
+  saveImageToDB, 
+  deleteImageFromDB, 
+  createPersistentURL, 
+  updateImageMetadata,
+  generateThumbnail 
+} from '../utils/indexedDB';
 
 interface IndexedDBImage {
   id: string;
@@ -100,10 +107,19 @@ export function useFolderImages(folderId: string, initialReferences: ImageRefere
       };
       newImages.push(newImage);
 
+      // 生成缩略图（失败时不影响保存）
+      let thumbnail: Blob | undefined;
+      try {
+        thumbnail = await generateThumbnail(file);
+      } catch (error) {
+        console.warn(`Failed to generate thumbnail for ${file.name}:`, error);
+      }
+
       await saveImageToDB({
         id: uniqueId,
         folderId: folderId,
         blob: file,
+        thumbnail,
         createdAt: new Date(),
         file
       });

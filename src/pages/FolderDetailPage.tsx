@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import Lightbox from 'yet-another-react-lightbox';
+import Zoom from 'yet-another-react-lightbox/plugins/zoom';
 import 'yet-another-react-lightbox/styles.css';
 import { X, Check, Image as ImageIcon, Filter, Circle, Play, Plus } from 'lucide-react';
 import { useGalleryManager } from '../hooks/useGalleryManager';
@@ -384,23 +385,24 @@ export default function FolderDetailPage() {
           index={lightboxIndex}
           close={() => setLightboxIndex(null)}
           slides={gallery.images.map(img => ({ src: img.url }))}
+          plugins={[Zoom]}
+          zoom={{
+            maxZoomPixelRatio: 5,
+            zoomInMultiplier: 2,
+            doubleTapDelay: 300,
+            doubleClickDelay: 300,
+            doubleClickMaxStops: 2,
+            keyboardMoveDistance: 50,
+            wheelZoomDistanceFactor: 100,
+            pinchZoomDistanceFactor: 100,
+            scrollToZoom: false
+          }}
           on={{
             view: ({ index }) => setLightboxIndex(index),
           }}
-          render={{
-            slide: ({ slide }) => (
-              <div className="relative w-full h-full flex items-center justify-center bg-black">
-                <img 
-                  src={slide.src} 
-                  alt="" 
-                  className="max-w-full max-h-full object-contain"
-                />
-              </div>
-            ),
-          }}
           styles={{ 
             container: { backgroundColor: 'rgba(0,0,0,0.95)' },
-            slide: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
+            toolbar: { top: '56px' }
           }}
         />
       )}

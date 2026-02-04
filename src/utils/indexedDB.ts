@@ -6,6 +6,7 @@ export interface IndexedDBImage {
   createdAt: Date;
   file?: File;
   folderId?: string;
+  thumbnail?: Blob; // 缩略图（宽度不超过400px）
   
   // 扩展属性
   metadata?: Partial<ImageReference>;
@@ -97,8 +98,67 @@ export async function updateImageMetadata(imageId: string, metadata: Partial<Ima
   });
 }
 
-export function createPersistentURL(file: File): string {
+export function createPersistentURL(file: File | Blob): string {
   return URL.createObjectURL(file);
+}
+
+/**
+ * 生成图片缩略图
+ * @param file 原始图片文件
+ * @param maxWidth 最大宽度，默认400px
+ * @returns 缩略图 Blob
+ */
+export async function generateThumbnail(file: File, maxWidth: number = 400): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      
+      // 计算缩放后的尺寸
+      let width = img.width;
+      let height = img.height;
+      
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width;
+        width = maxWidth;
+      }
+      
+      // 创建 canvas 生成缩略图
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Cannot get canvas context'));
+        return;
+      }
+      
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // 转换为 Blob，使用 JPEG 格式压缩
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Failed to generate thumbnail'));
+          }
+        },
+        'image/jpeg',
+        0.8 // 质量 80%
+      );
+    };
+    
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load image'));
+    };
+    
+    img.src = url;
+  });
 }
 
 /**
